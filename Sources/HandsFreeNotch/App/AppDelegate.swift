@@ -86,7 +86,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             Keys.requestAccessibility()
             waitForAccessibility()
         }
-        log.info("ready; hotkey \(settings.hotkey.title, privacy: .public); on-device speech \(speech.onDevice); model \(self.pipeline.llm?.label ?? "off", privacy: .public) (key from \(settings.keySource, privacy: .public)); agent \(self.pipeline.agent?.isAvailable == true ? "ready" : "off", privacy: .public)")
+        log.info("ready; hotkey \(settings.hotkey.title, privacy: .public); on-device speech \(speech.onDevice); model \(self.pipeline.llm?.label ?? "off", privacy: .public); agent \(self.pipeline.agent?.isAvailable == true ? "ready" : "off", privacy: .public)")
     }
 
     private func applySettings() {

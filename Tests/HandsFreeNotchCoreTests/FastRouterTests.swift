@@ -83,6 +83,13 @@ final class FastRouterTests: XCTestCase {
         XCTAssertEqual(route("hide slack"), .hideApp(apps.entries.first { $0.name == "Slack" }!))
     }
 
+    func testScreenWorkGoesStraightToTheAgent() {
+        XCTAssertEqual(route("click on the english link on this page"), .agent(goal: "click on the english link on this page"))
+        XCTAssertEqual(route("reply to alex saying i am late"), .agent(goal: "reply to alex saying i am late"))
+        XCTAssertEqual(route("book a table for two tonight"), .agent(goal: "book a table for two tonight"))
+        XCTAssertEqual(route("select all"), .shortcut(.selectAll), "whole-utterance shortcuts still win")
+    }
+
     func testUnknownFallsThrough() {
         XCTAssertNil(route("find me the cheapest flight to tokyo next friday"))
         XCTAssertNil(route("open the thing I was looking at yesterday"))

@@ -73,7 +73,9 @@ struct RoutePayload: Decodable {
         You route one spoken command from a macOS user to one action. Reply only by calling the route tool.
         Rules:
         - Use open_app only with an exact name from INSTALLED APPS. If the user names an app that is not installed but is a website (netflix, gmail), use open_url.
-        - Prefer the simplest action that satisfies the sentence. "play some jazz" is open_app Spotify only if nothing better exists; if the request needs clicking around inside an app or a website (find a product, book something, reply to a message, read something on screen), use agent with the full goal.
+        - Prefer the simplest action that satisfies the sentence. "play some jazz" is open_app Spotify only if nothing better exists.
+        - Anything that refers to what is on the screen, or needs clicking, reading or typing inside an app or a website, is agent with the full goal in the goal field. Examples: "click the English link" → agent; "reply to Alex saying I'm late" → agent; "open Alex's DM" → agent; "find the cheapest flight" → agent; "what does this page say" → agent; "book a table" → agent.
+        - screenshot is only for the literal words screenshot / capture the screen. Never use it for clicking or reading.
         - shortcut takes key+modifiers, e.g. new tab is key "t" with ["command"].
         - Unclear or not a command: cancel.
         INSTALLED APPS: \(apps.joined(separator: ", "))

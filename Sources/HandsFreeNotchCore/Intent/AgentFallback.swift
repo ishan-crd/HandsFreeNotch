@@ -41,6 +41,12 @@ public final class AgentFallback {
         process.currentDirectoryURL = URL(fileURLWithPath: projectPath)
         var env = ProcessInfo.processInfo.environment
         env["PATH"] = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:" + (env["PATH"] ?? "")
+        env["PYTHONUNBUFFERED"] = "1"  // otherwise every step's output arrives only at exit
+        // The project's .env is the source of truth. clicker only fills variables that are unset,
+        // and a login session often carries empty or unrelated ANTHROPIC_* values that would
+        // otherwise win, so they are cleared first and the file's values put in their place.
+        for key in ["ANTHROPIC_API_KEY", "ANTHROPIC_BASE_URL", "ANTHROPIC_AUTH_TOKEN", "TYPESAFE_API_KEY"] { env.removeValue(forKey: key) }
+        for (key, value) in Self.dotEnv(at: projectPath + "/.env") where !value.isEmpty { env[key] = value }
         process.environment = env
 
         let pipe = Pipe()
@@ -72,5 +78,24 @@ public final class AgentFallback {
 
     public func stop() {
         process?.terminate()
+    }
+
+    /// Whether the project has a key the loop can run on.
+    public var hasKey: Bool {
+        let env = Self.dotEnv(at: projectPath + "/.env")
+        return !(env["ANTHROPIC_API_KEY"] ?? "").isEmpty || !(env["TYPESAFE_API_KEY"] ?? "").isEmpty
+    }
+
+    static func dotEnv(at path: String) -> [String: String] {
+        guard let text = try? String(contentsOfFile: path, encoding: .utf8) else { return [:] }
+        var out: [String: String] = [:]
+        for raw in text.split(separator: "\n") {
+            let line = raw.trimmingCharacters(in: .whitespaces)
+            guard !line.hasPrefix("#"), let eq = line.firstIndex(of: "=") else { continue }
+            let key = line[..<eq].trimmingCharacters(in: .whitespaces)
+            let value = line[line.index(after: eq)...].trimmingCharacters(in: .whitespaces).trimmingCharacters(in: CharacterSet(charactersIn: "\"'"))
+            out[key] = value
+        }
+        return out
     }
 }

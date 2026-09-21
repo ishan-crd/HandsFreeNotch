@@ -58,6 +58,8 @@ public enum Intent: Equatable {
         switch self {
         case .openApp, .openURL, .openClipboardLink, .shortcut, .scroll, .volume, .brightness, .media, .pressKey:
             return true
+        case .agent:
+            return false  // the goal is the whole sentence; wait for all of it
         default:
             return false
         }

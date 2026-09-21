@@ -35,8 +35,8 @@ final class Settings {
     var ollamaModel: String { didSet { defaults.set(ollamaModel, forKey: "ollamaModel") } }
     var agentPath: String { didSet { defaults.set(agentPath, forKey: "agentPath") } }
     var launchAtLogin: Bool { didSet { defaults.set(launchAtLogin, forKey: "launchAtLogin") } }
-    var anthropicKey: String { didSet { Keychain.write(anthropicKey, account: "anthropic") } }
-    var openrouterKey: String { didSet { Keychain.write(openrouterKey, account: "openrouter") } }
+    var anthropicKey: String { didSet { KeyStore.write(anthropicKey, name: "ANTHROPIC_API_KEY") } }
+    var openrouterKey: String { didSet { KeyStore.write(openrouterKey, name: "OPENROUTER_API_KEY") } }
     var openrouterModel: String { didSet { defaults.set(openrouterModel, forKey: "openrouterModel") } }
 
     private let defaults = UserDefaults.standard
@@ -44,13 +44,9 @@ final class Settings {
     /// Re-reads the provider and key after the command line changed them.
     func reload() {
         provider = LLMProvider(rawValue: defaults.string(forKey: "provider") ?? "") ?? .anthropic
-        let stored = Keychain.read("anthropic") ?? ""
-        if !stored.isEmpty {
-            if stored != anthropicKey { anthropicKey = stored; keySource = "keychain" }
-        } else if keySource == "keychain" {
-            anthropicKey = ""  // removed with `--set-key ""`
-        }
-        let openrouter = Keychain.read("openrouter") ?? ""
+        let anthropic = KeyStore.read("ANTHROPIC_API_KEY") ?? ProcessInfo.processInfo.environment["ANTHROPIC_API_KEY"] ?? ""
+        if anthropic != anthropicKey { anthropicKey = anthropic }
+        let openrouter = KeyStore.read("OPENROUTER_API_KEY") ?? ProcessInfo.processInfo.environment["OPENROUTER_API_KEY"] ?? ""
         if openrouter != openrouterKey { openrouterKey = openrouter }
         openrouterModel = defaults.string(forKey: "openrouterModel") ?? OpenRouterRouter.defaultModel
     }
@@ -61,37 +57,12 @@ final class Settings {
         anthropicModel = defaults.string(forKey: "anthropicModel") ?? AnthropicRouter.defaultModel
         ollamaModel = defaults.string(forKey: "ollamaModel") ?? OllamaRouter.defaultModel
         openrouterModel = defaults.string(forKey: "openrouterModel") ?? OpenRouterRouter.defaultModel
-        openrouterKey = Keychain.read("openrouter") ?? ProcessInfo.processInfo.environment["OPENROUTER_API_KEY"] ?? Settings.dotEnv()["OPENROUTER_API_KEY"] ?? ""
+        openrouterKey = KeyStore.read("OPENROUTER_API_KEY") ?? ProcessInfo.processInfo.environment["OPENROUTER_API_KEY"] ?? ""
         agentPath = defaults.string(forKey: "agentPath") ?? Settings.guessAgentPath()
         launchAtLogin = defaults.bool(forKey: "launchAtLogin")
-        // First non-empty source wins: keychain, the environment, then the dotenv file.
-        let sources: [(String, String?)] = [
-            ("keychain", Keychain.read("anthropic")),
-            ("environment", ProcessInfo.processInfo.environment["ANTHROPIC_API_KEY"]),
-            ("dotenv", Settings.dotEnv()["ANTHROPIC_API_KEY"]),
-        ]
-        let found = sources.first { !($0.1 ?? "").isEmpty }
-        anthropicKey = found?.1 ?? ""
-        keySource = found?.0 ?? "none"
+        anthropicKey = KeyStore.read("ANTHROPIC_API_KEY") ?? ProcessInfo.processInfo.environment["ANTHROPIC_API_KEY"] ?? ""
     }
 
-    /// Where the key came from, for the launch log.
-    private(set) var keySource: String
-
-    /// KEY=VALUE lines from ~/.config/handsfreenotch/.env, for people who would rather not use the keychain.
-    private static func dotEnv() -> [String: String] {
-        let path = NSHomeDirectory() + "/.config/handsfreenotch/.env"
-        guard let text = try? String(contentsOfFile: path, encoding: .utf8) else { return [:] }
-        var out: [String: String] = [:]
-        for raw in text.split(separator: "\n") {
-            let line = raw.trimmingCharacters(in: .whitespaces)
-            guard !line.hasPrefix("#"), let eq = line.firstIndex(of: "=") else { continue }
-            let key = line[..<eq].trimmingCharacters(in: .whitespaces)
-            let value = line[line.index(after: eq)...].trimmingCharacters(in: .whitespaces).trimmingCharacters(in: CharacterSet(charactersIn: "\"'"))
-            out[key] = value
-        }
-        return out
-    }
 
     /// The router the pipeline should use right now.
     func makeLLM() -> LLMRouter? {

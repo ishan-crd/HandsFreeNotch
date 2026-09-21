@@ -22,6 +22,16 @@ public enum Keys {
         AXIsProcessTrustedWithOptions(options)
     }
 
+    /// The screen agent captures the display, which needs Screen Recording.
+    public static var screenRecordingGranted: Bool {
+        CGPreflightScreenCaptureAccess()
+    }
+
+    /// Shows the system prompt the first time; afterwards the user must use System Settings.
+    public static func requestScreenRecording() {
+        CGRequestScreenCaptureAccess()
+    }
+
     public static func press(_ chord: KeyChord) {
         var flags: CGEventFlags = []
         if chord.command { flags.insert(.maskCommand) }

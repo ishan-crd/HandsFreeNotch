@@ -272,6 +272,10 @@ struct SettingsView: View {
                     Keys.requestAccessibility()
                     openPrivacy("Privacy_Accessibility")
                 }
+                permission("Screen Recording", granted: vm.screenRecordingGranted, detail: "screen agent only") {
+                    Keys.requestScreenRecording()
+                    openPrivacy("Privacy_ScreenCapture")
+                }
                 HStack {
                     Spacer()
                     Button("Quit HandsFreeNotch") { NSApp.terminate(nil) }

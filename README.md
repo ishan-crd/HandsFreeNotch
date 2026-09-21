@@ -67,8 +67,9 @@ Or `make run` to launch from the build folder, or `open Package.swift` to work i
 
 On first launch macOS asks for **Microphone** and **Speech Recognition**. Also allow the app under
 **System Settings › Privacy & Security › Accessibility**: that is what lets it hear the push-to-talk
-key system-wide and send keystrokes, scrolls and shortcuts to other apps. The notch opens on its
-own to the Settings tab if anything is missing.
+key system-wide and send keystrokes, scrolls and shortcuts to other apps. The screen agent (tier 2)
+additionally needs **Screen & System Audio Recording**. The notch opens on its own to the Settings
+tab if anything is missing, and each permission has an Allow… button there.
 
 > macOS ties the Accessibility grant to the code signature, so an ad-hoc build has to be re-allowed
 > after every rebuild. Run `scripts/make-cert.sh` once: it creates a local signing identity
@@ -122,11 +123,12 @@ Tier 0 handles the everyday commands for free. The model only sees sentences it 
 |---|---|---|
 | **Ollama, local** | $0, offline | `brew install ollama && ollama pull qwen2.5:1.5b`, then `HandsFreeNotch --use ollama` |
 | **OpenRouter free models** | $0 (rate-limited: ~50 requests/day, 1000/day once the account has $10 of credit) | key from openrouter.ai/keys, then `HandsFreeNotch --set-key openrouter sk-or-…` |
+| **Screen agent** (tier 2) | $0 on the same free models | in the typesafe-computer-use checkout, `.env` with `ANTHROPIC_API_KEY=<openrouter key>`, `ANTHROPIC_BASE_URL=https://openrouter.ai/api` and `CLICKER_*_MODEL` set to free models (see below) |
 | **Claude Haiku 4.5** | ≈ $0.001 per free-form command ($1 / $5 per million tokens) | `HandsFreeNotch --set-key sk-ant-…` |
 | Off | $0 | `HandsFreeNotch --use off` — tier 0 only |
 
-`HandsFreeNotch` here is `/Applications/HandsFreeNotch.app/Contents/MacOS/HandsFreeNotch`. Keys go in the
-login keychain; the Settings tab in the notch does the same thing with a text field. Clicking a
+`HandsFreeNotch` here is `/Applications/HandsFreeNotch.app/Contents/MacOS/HandsFreeNotch`. Keys are kept
+in `~/.config/handsfreenotch/.env` (mode 600); the Settings tab in the notch does the same thing with a text field. Clicking a
 red “not a command” pill opens Settings. `--model <name>` changes the model for the matching
 provider, e.g. `--model qwen/qwen3.8-27b:free`; the OpenRouter default is
 `nex-agi/nex-n2.5-mini:free`, and the request lists several other free models as fallbacks so a
@@ -138,7 +140,7 @@ model that is rate-limited upstream (common on the free tier) is skipped automat
 |---|---|---|
 | Push to talk | right ⌥ | a modifier key, so holding it never types anything |
 | Free-form model | Claude Haiku 4.5 | or **OpenRouter** (free models), **Ollama** (`qwen2.5:1.5b`, free and offline), or **Off** for tier 0 only |
-| API keys | — | stored in the login keychain; `ANTHROPIC_API_KEY` / `OPENROUTER_API_KEY` in the environment or in `~/.config/handsfreenotch/.env` also work |
+| API keys | — | `ANTHROPIC_API_KEY` / `OPENROUTER_API_KEY` in `~/.config/handsfreenotch/.env`, or in the environment |
 | Screen agent path | auto-detected | a checkout of typesafe-computer-use with `uv sync` done and its own `.env` |
 | Launch at login | off | |
 

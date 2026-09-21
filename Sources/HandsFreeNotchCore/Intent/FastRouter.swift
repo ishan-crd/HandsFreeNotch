@@ -38,6 +38,7 @@ public final class FastRouter {
         let words = text.split(separator: " ").map(String.init)
 
         if let r = exact(text) { return r }
+        if let r = screenWork(text) { return r }
         if let r = open(text, words) { return r }
         if let r = search(text) { return r }
         if let r = typing(text) { return r }
@@ -149,6 +150,27 @@ public final class FastRouter {
         let trimmed = text.replacingOccurrences(of: " now", with: "").replacingOccurrences(of: " right now", with: "")
         if trimmed != text, let intent = Self.exact[trimmed] { return Routed(intent, confidence: 0.98, tier: .fast) }
         return nil
+    }
+
+    // MARK: - work that needs the screen
+
+    /// Verbs that only make sense against what is on screen. These never need a model to decide:
+    /// they go to the agent as spoken.
+    private static let screenVerbs = [
+        "click", "tap", "double click", "right click", "press the", "hit the", "select", "choose", "pick",
+        "reply", "reply to", "respond to", "answer", "send", "message", "text", "dm", "email", "forward",
+        "book", "buy", "order", "purchase", "add to cart", "checkout", "check out", "reserve",
+        "fill", "fill in", "fill out", "log in", "login", "log into", "sign in", "sign into", "sign up", "subscribe", "unsubscribe",
+        "read", "summarize", "summarise", "tell me what", "what does it say", "what's on", "whats on",
+        "download", "upload", "attach", "share", "like", "follow", "unfollow", "comment", "post",
+        "accept", "decline", "dismiss the", "join", "leave", "mute the", "turn on", "turn off", "enable", "disable",
+    ]
+
+    private func screenWork(_ text: String) -> Routed? {
+        guard let (verb, rest) = strip(verbs: Self.screenVerbs, from: text), !rest.isEmpty else { return nil }
+        // "send" alone is Return; "select all" and the other whole-utterance commands were matched above.
+        if verb == "send", rest == "it" { return Routed(.pressKey(KeyChord(.return)), confidence: 0.9, tier: .fast) }
+        return Routed(.agent(goal: text), confidence: 0.9, tier: .fast)
     }
 
     // MARK: - open / launch / go to

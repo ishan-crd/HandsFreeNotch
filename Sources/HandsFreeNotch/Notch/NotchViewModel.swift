@@ -25,6 +25,7 @@ final class NotchViewModel {
     var level: Float = 0
     var history: [(transcript: String, title: String, tier: Routed.Tier, milliseconds: Int)] = []
     var accessibilityGranted = Keys.accessibilityTrusted
+    var screenRecordingGranted = Keys.screenRecordingGranted
     var speechGranted = false
     var onDevice = false
 
@@ -136,6 +137,7 @@ final class NotchViewModel {
 
     func refreshPermissions() {
         accessibilityGranted = Keys.accessibilityTrusted
+        screenRecordingGranted = Keys.screenRecordingGranted
         speechGranted = pipeline.speech.authorized
         onDevice = pipeline.speech.onDevice
     }

@@ -18,17 +18,16 @@ if let index = CommandLine.arguments.firstIndex(of: "--say"), index + 1 < Comman
 }
 
 // `HandsFreeNotch --set-key sk-ant-…` (Anthropic) or `--set-key openrouter sk-or-…` stores the key
-// in the keychain and switches the running app to that provider; `--use ollama|anthropic|openrouter|off`
+// in ~/.config/handsfreenotch/.env and switches the running app to that provider; `--use ollama|anthropic|openrouter|off`
 // picks the free-form model. All exit at once.
 if let index = CommandLine.arguments.firstIndex(of: "--set-key"), index + 1 < CommandLine.arguments.count {
     var args = Array(CommandLine.arguments[(index + 1)...])
     var provider = LLMProvider.anthropic
     if args.count >= 2, let named = LLMProvider(rawValue: args[0].lowercased()) { provider = named; args.removeFirst() }
-    let account = provider == .openrouter ? "openrouter" : "anthropic"
-    Keychain.write(args[0], account: account)
+    KeyStore.write(args[0], name: provider == .openrouter ? "OPENROUTER_API_KEY" : "ANTHROPIC_API_KEY")
     UserDefaults.standard.set(provider.rawValue, forKey: "provider")
     DistributedNotificationCenter.default().postNotificationName(reloadNotification, object: nil, userInfo: nil, deliverImmediately: true)
-    print("key saved to the keychain; free-form model: \(provider.title)")
+    print("key saved to \(KeyStore.path); free-form model: \(provider.title)")
     exit(0)
 }
 if let index = CommandLine.arguments.firstIndex(of: "--model"), index + 1 < CommandLine.arguments.count {

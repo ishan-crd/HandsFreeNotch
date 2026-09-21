@@ -346,6 +346,10 @@ public final class CommandPipeline {
             if continuous { stopContinuous() } else { state = .idle }
             return
         }
+        if case let .agent(goal) = routed.intent {
+            runAgent(goal: goal.isEmpty ? transcript : goal)
+            return
+        }
         do {
             try runner(routed.intent)
             let ms = Int((now() - started) * 1000)
@@ -369,6 +373,15 @@ public final class CommandPipeline {
     private func runAgent(goal: String) {
         guard let agent, agent.isAvailable else {
             fail("“\(goal)” needs the screen agent. Set the typesafe-computer-use path in Settings.")
+            return
+        }
+        guard agent.hasKey else {
+            fail("Screen agent has no key: add ANTHROPIC_API_KEY to \(agent.projectPath)/.env")
+            return
+        }
+        guard Keys.screenRecordingGranted else {
+            Keys.requestScreenRecording()
+            fail("Allow HandsFreeNotch under System Settings › Privacy & Security › Screen & System Audio Recording, then try again")
             return
         }
         var lines: [String] = []
