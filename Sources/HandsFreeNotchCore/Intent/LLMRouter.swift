@@ -247,7 +247,17 @@ public struct OllamaRouter: LLMRouter {
 /// Any OpenAI-compatible chat endpoint; OpenRouter's free models by default. The route is asked
 /// for as a forced tool call; models that answer in plain JSON instead are parsed leniently.
 public struct OpenRouterRouter: LLMRouter {
-    public static let defaultModel = "google/gemma-4-26b-a4b-it:free"
+    public static let defaultModel = "nex-agi/nex-n2.5-mini:free"
+    /// Free models that answered this exact tool call correctly when tested, fastest first. The
+    /// request names all of them so OpenRouter moves on when one is rate-limited upstream.
+    public static let fallbacks = [
+        "cohere/north-mini-code:free",
+        "inclusionai/ling-3.0-flash-sante:free",
+        "nvidia/nemotron-3-super-120b-a12b:free",
+        "liquid/lfm-2.5-2.6b:free",
+        "google/gemma-4-26b-a4b-it:free",
+        "qwen/qwen3.8-27b:free",
+    ]
     public var apiKey: String
     public var model: String
     public var endpoint = URL(string: "https://openrouter.ai/api/v1/chat/completions")!
@@ -270,7 +280,8 @@ public struct OpenRouterRouter: LLMRouter {
                 "parameters": RoutePayload.schema,
             ],
         ]
-        let body: [String: Any] = [
+        let models = [model] + Self.fallbacks.filter { $0 != model }
+        var body: [String: Any] = [
             "model": model,
             "max_tokens": 300,
             "temperature": 0,
@@ -281,18 +292,29 @@ public struct OpenRouterRouter: LLMRouter {
                 ["role": "user", "content": transcript],
             ],
         ]
-        var request = URLRequest(url: endpoint)
-        request.httpMethod = "POST"
-        request.timeoutInterval = timeout
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
-        request.setValue("https://github.com/ishan-crd/HandsFreeNotch", forHTTPHeaderField: "HTTP-Referer")
-        request.setValue("HandsFreeNotch", forHTTPHeaderField: "X-Title")
-        request.httpBody = try JSONSerialization.data(withJSONObject: body)
-
-        let (data, response) = try await URLSession.shared.data(for: request)
-        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
-        if status == 429 { throw LLMRouterError.badResponse("OpenRouter rate limit for free models reached; try again later or add credits") }
+        // Free models are rate-limited upstream. OpenRouter takes at most three models per request
+        // and moves down that list itself; a second request covers the rest of ours.
+        var data = Data()
+        var status = 0
+        for attempt in 0..<3 {
+            let order = Array(models.dropFirst(attempt * 3).prefix(3))
+            guard !order.isEmpty else { break }
+            body["model"] = order[0]
+            body["models"] = order
+            var request = URLRequest(url: endpoint)
+            request.httpMethod = "POST"
+            request.timeoutInterval = timeout
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+            request.setValue("https://github.com/ishan-crd/HandsFreeNotch", forHTTPHeaderField: "HTTP-Referer")
+            request.setValue("HandsFreeNotch", forHTTPHeaderField: "X-Title")
+            request.httpBody = try JSONSerialization.data(withJSONObject: body)
+            let (d, response) = try await URLSession.shared.data(for: request)
+            data = d
+            status = (response as? HTTPURLResponse)?.statusCode ?? 0
+            if status != 429 { break }
+        }
+        if status == 429 { throw LLMRouterError.badResponse("every free model is busy right now; try again in a moment") }
         guard status == 200 else { throw LLMRouterError.http(status, String(data: data, encoding: .utf8) ?? "") }
         guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
               let choices = json["choices"] as? [[String: Any]],

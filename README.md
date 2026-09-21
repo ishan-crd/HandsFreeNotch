@@ -129,7 +129,8 @@ Tier 0 handles the everyday commands for free. The model only sees sentences it 
 login keychain; the Settings tab in the notch does the same thing with a text field. Clicking a
 red “not a command” pill opens Settings. `--model <name>` changes the model for the matching
 provider, e.g. `--model qwen/qwen3.8-27b:free`; the OpenRouter default is
-`google/gemma-4-26b-a4b-it:free`, a fast mixture-of-experts model that supports tool calls.
+`nex-agi/nex-n2.5-mini:free`, and the request lists several other free models as fallbacks so a
+model that is rate-limited upstream (common on the free tier) is skipped automatically.
 
 ## Settings
 
