@@ -20,7 +20,7 @@ struct NotchView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         // Width follows the words as they arrive, so the resize must be quick and never bounce.
-        .animation(vm.status == .opened ? vm.animation : .snappy(duration: 0.22, extraBounce: 0), value: vm.notchSize)
+        .animation(vm.status == .opened ? vm.animation : .easeOut(duration: 0.14), value: vm.notchSize)
         .animation(vm.animation, value: vm.status == .opened)
         .preferredColorScheme(.dark)
     }

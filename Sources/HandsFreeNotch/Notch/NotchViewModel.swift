@@ -57,7 +57,7 @@ final class NotchViewModel {
         let (text, font) = pillText
         guard !text.isEmpty else { return 0 }
         let measured = (text as NSString).size(withAttributes: [.font: font]).width
-        let chrome: CGFloat = 12 + 14 + 6 + 10  // padding, icon, gap, padding
+        let chrome: CGFloat = 12 + 14 + 6 + 10 + 10  // padding, icon, gap, padding, slack for SwiftUI's text metrics
         let cap: CGFloat
         switch pipelineState {
         case .failed: cap = 420

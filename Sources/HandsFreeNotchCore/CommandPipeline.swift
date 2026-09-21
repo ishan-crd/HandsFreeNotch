@@ -230,7 +230,9 @@ public final class CommandPipeline {
                 await route(text, since: started)
             }
         }
-        if final, !speech.isListening, !continuous, case .listening = state { state = .idle }
+        if final, !speech.isListening, !continuous {
+            if case .listening = state { state = .idle } else if case .done = state { scheduleIdle() }
+        }
         if final, continuous {
             // The sentence is over; start a fresh session so the transcript stays short.
             sessionWords = []
@@ -347,13 +349,13 @@ public final class CommandPipeline {
             state = .done(title: routed.intent.title, tier: routed.tier, milliseconds: ms)
             if keepListening {
                 // Show the result but keep the microphone open for the rest of the sentence.
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.9) { [weak self] in
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak self] in
                     guard let self, self.speech.isListening, case .done = self.state else { return }
                     self.state = .listening(transcript: self.pendingText)
                 }
-            } else {
-                scheduleIdle()
             }
+            // Once the microphone closes, the result lingers under a second and fades.
+            scheduleIdle()
         } catch {
             fail(error.localizedDescription)
         }
@@ -394,7 +396,7 @@ public final class CommandPipeline {
         scheduleIdle(after: 4)
     }
 
-    private func scheduleIdle(after seconds: TimeInterval = 1.4) {
+    private func scheduleIdle(after seconds: TimeInterval = 0.8) {
         idleReset?.cancel()
         let reset = DispatchWorkItem { [weak self] in
             guard let self, !self.speech.isListening else { return }
