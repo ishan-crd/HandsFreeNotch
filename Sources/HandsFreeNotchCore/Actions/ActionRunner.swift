@@ -112,12 +112,9 @@ public enum ActionRunner {
     }
 
     static func open(_ app: AppEntry) {
-        // Activating a running app is instant; launching goes through LaunchServices.
-        if let running = runningApp(app) {
-            running.activate()
-            if running.isHidden { running.unhide() }
-            return
-        }
+        // Since macOS 14 a background app cannot activate another app directly (cooperative
+        // activation), so both launching and bringing forward go through Launch Services.
+        if let running = runningApp(app), running.isHidden { running.unhide() }
         let config = NSWorkspace.OpenConfiguration()
         config.activates = true
         NSWorkspace.shared.openApplication(at: app.url, configuration: config)

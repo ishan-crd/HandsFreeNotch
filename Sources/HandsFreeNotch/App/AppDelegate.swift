@@ -9,6 +9,8 @@ import AppKit
 import HandsFreeNotchCore
 import os
 
+let sayNotification = Notification.Name("com.ishan.HandsFreeNotch.say")
+
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private let log = Logger(subsystem: "com.ishan.HandsFreeNotch", category: "app")
@@ -31,6 +33,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             DispatchQueue.main.async { self?.applySettings() }
         }
 
+        pipeline.onLog = { [log] line in log.info("\(line, privacy: .public)") }
+        DistributedNotificationCenter.default().addObserver(forName: sayNotification, object: nil, queue: .main) { [weak self] note in
+            guard let text = note.userInfo?["text"] as? String else { return }
+            MainActor.assumeIsolated { self?.pipeline.handle(text) }
+        }
+
         hotkey = HotkeyMonitor(hotkey: settings.hotkey)
         hotkey.onPress = { [weak self] in self?.pipeline.beginListening() }
         hotkey.onRelease = { [weak self] in self?.pipeline.endListening() }
@@ -49,7 +57,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             Keys.requestAccessibility()
             waitForAccessibility()
         }
-        log.info("ready; hotkey \(settings.hotkey.title, privacy: .public); on-device speech \(speech.onDevice)")
+        log.info("ready; hotkey \(settings.hotkey.title, privacy: .public); on-device speech \(speech.onDevice); model \(self.pipeline.llm?.label ?? "off", privacy: .public) (key from \(settings.keySource, privacy: .public)); agent \(self.pipeline.agent?.isAvailable == true ? "ready" : "off", privacy: .public)")
     }
 
     private func applySettings() {

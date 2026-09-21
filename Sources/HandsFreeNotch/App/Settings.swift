@@ -45,11 +45,19 @@ final class Settings {
         ollamaModel = defaults.string(forKey: "ollamaModel") ?? OllamaRouter.defaultModel
         agentPath = defaults.string(forKey: "agentPath") ?? Settings.guessAgentPath()
         launchAtLogin = defaults.bool(forKey: "launchAtLogin")
-        anthropicKey = Keychain.read("anthropic")
-            ?? ProcessInfo.processInfo.environment["ANTHROPIC_API_KEY"]
-            ?? Settings.dotEnv()["ANTHROPIC_API_KEY"]
-            ?? ""
+        // First non-empty source wins: keychain, the environment, then the dotenv file.
+        let sources: [(String, String?)] = [
+            ("keychain", Keychain.read("anthropic")),
+            ("environment", ProcessInfo.processInfo.environment["ANTHROPIC_API_KEY"]),
+            ("dotenv", Settings.dotEnv()["ANTHROPIC_API_KEY"]),
+        ]
+        let found = sources.first { !($0.1 ?? "").isEmpty }
+        anthropicKey = found?.1 ?? ""
+        keySource = found?.0 ?? "none"
     }
+
+    /// Where the key came from, for the launch log.
+    let keySource: String
 
     /// KEY=VALUE lines from ~/.config/handsfreenotch/.env, for people who would rather not use the keychain.
     private static func dotEnv() -> [String: String] {

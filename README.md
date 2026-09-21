@@ -63,15 +63,25 @@ On first launch macOS asks for **Microphone** and **Speech Recognition**. Also a
 key system-wide and send keystrokes, scrolls and shortcuts to other apps. The notch opens on its
 own to the Settings tab if anything is missing.
 
-> The default build is ad-hoc signed. macOS ties the Accessibility grant to the code signature, so
-> after rebuilding you have to toggle the app off and on again in the Accessibility list. Pass
-> `CODESIGN_IDENTITY="Apple Development: …"` to `scripts/bundle.sh` to keep the grant across builds.
+> macOS ties the Accessibility grant to the code signature, so an ad-hoc build has to be re-allowed
+> after every rebuild. Run `scripts/make-cert.sh` once: it creates a local signing identity
+> (“HandsFreeNotch Dev”) that `make` picks up automatically, and the grant then survives rebuilds.
+> A real `CODESIGN_IDENTITY="Apple Development: …"` works too.
 
 ## Use
 
 Hold **right ⌥ Option** (changeable to right ⌘, right ⌃, left ⌃ or fn in Settings), speak, release.
 Click the notch to open the panel: recent commands with their timings, the command list, and
 settings. The panel also has a text field to try commands by typing.
+
+Commands can also come from a script, Raycast or Shortcuts:
+
+```bash
+/Applications/HandsFreeNotch.app/Contents/MacOS/HandsFreeNotch --say "open safari"
+```
+
+Each command's state changes go to the unified log:
+`/usr/bin/log stream --level info --predicate 'subsystem == "com.ishan.HandsFreeNotch"'`.
 
 Things the fast tier understands, with room for variation in wording:
 

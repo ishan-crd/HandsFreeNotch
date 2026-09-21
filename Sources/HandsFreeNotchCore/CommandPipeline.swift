@@ -26,9 +26,14 @@ public final class CommandPipeline {
     }
 
     public private(set) var state: State = .idle {
-        didSet { onState?(state) }
+        didSet {
+            onState?(state)
+            onLog?("state: \(state)")
+        }
     }
     public var onState: ((State) -> Void)?
+    /// One line per state change, for the system log.
+    public var onLog: ((String) -> Void)?
     public var onLevel: ((Float) -> Void)?
     /// Every command that ran, newest first, for the panel.
     public private(set) var history: [(transcript: String, title: String, tier: Routed.Tier, milliseconds: Int)] = []

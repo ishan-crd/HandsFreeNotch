@@ -5,12 +5,16 @@
 #   CONFIG=debug scripts/bundle.sh
 #   CODESIGN_IDENTITY="Apple Development: …" scripts/bundle.sh
 #
-# The default signature is ad-hoc. macOS ties the Accessibility grant to the signature, so an
-# ad-hoc build has to be re-allowed after every rebuild; a real identity keeps the grant.
+# macOS ties the Accessibility grant to the code signature, so an ad-hoc build has to be
+# re-allowed after every rebuild. `scripts/make-cert.sh` creates a local identity named
+# "HandsFreeNotch Dev"; when it exists it is used automatically and the grant survives rebuilds.
 set -eu
 cd "$(dirname "$0")/.."
 
 CONFIG="${CONFIG:-release}"
+if [ -z "${CODESIGN_IDENTITY:-}" ] && security find-identity -v -p codesigning 2>/dev/null | grep -q "HandsFreeNotch Dev"; then
+  CODESIGN_IDENTITY="HandsFreeNotch Dev"
+fi
 IDENTITY="${CODESIGN_IDENTITY:--}"
 APP="build/HandsFreeNotch.app"
 

@@ -44,6 +44,8 @@ public final class SpeechListener {
     public init(locale: Locale = .current) {
         recognizer = SFSpeechRecognizer(locale: locale) ?? SFSpeechRecognizer(locale: Locale(identifier: "en-US"))
         onDevice = recognizer?.supportsOnDeviceRecognition ?? false
+        // The input node is created on first access; preparing an engine with no nodes throws.
+        _ = engine.inputNode.outputFormat(forBus: 0)
         engine.prepare()
     }
 
