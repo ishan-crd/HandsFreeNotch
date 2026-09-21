@@ -10,6 +10,7 @@ import HandsFreeNotchCore
 import os
 
 let sayNotification = Notification.Name("com.ishan.HandsFreeNotch.say")
+let reloadNotification = Notification.Name("com.ishan.HandsFreeNotch.reload")
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
@@ -42,6 +43,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Hold the key to talk; a quick tap keeps the microphone open until the next tap or "stop".
         var pressedAt: TimeInterval = 0
         var tapStopped = false
+        DistributedNotificationCenter.default().addObserver(forName: reloadNotification, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated {
+                settings.reload()
+                self?.applySettings()
+                self?.log.info("settings reloaded; model \(self?.pipeline.llm?.label ?? "off", privacy: .public)")
+            }
+        }
+
         hotkey = HotkeyMonitor(hotkey: settings.hotkey)
         hotkey.onPress = { [weak self] in
             guard let self else { return }

@@ -147,7 +147,7 @@ final class NotchViewModel {
             if !openedRect.contains(point) { close() }
         case .closed:
             if deviceNotchRect.insetBy(dx: -6, dy: -2).contains(point) || (pipelineState != .idle && openedRect.contains(point)) {
-                open()
+                if case .failed = pipelineState { open(.settings) } else { open() }
             }
         }
     }

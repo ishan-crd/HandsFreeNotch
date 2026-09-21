@@ -38,6 +38,17 @@ final class Settings {
 
     private let defaults = UserDefaults.standard
 
+    /// Re-reads the provider and key after the command line changed them.
+    func reload() {
+        provider = LLMProvider(rawValue: defaults.string(forKey: "provider") ?? "") ?? .anthropic
+        let stored = Keychain.read("anthropic") ?? ""
+        if !stored.isEmpty {
+            if stored != anthropicKey { anthropicKey = stored; keySource = "keychain" }
+        } else if keySource == "keychain" {
+            anthropicKey = ""  // removed with `--set-key ""`
+        }
+    }
+
     private init() {
         hotkey = Hotkey(rawValue: defaults.string(forKey: "hotkey") ?? "") ?? .rightOption
         provider = LLMProvider(rawValue: defaults.string(forKey: "provider") ?? "") ?? .anthropic
@@ -57,7 +68,7 @@ final class Settings {
     }
 
     /// Where the key came from, for the launch log.
-    let keySource: String
+    private(set) var keySource: String
 
     /// KEY=VALUE lines from ~/.config/handsfreenotch/.env, for people who would rather not use the keychain.
     private static func dotEnv() -> [String: String] {

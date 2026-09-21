@@ -221,8 +221,15 @@ public struct OllamaRouter: LLMRouter {
         request.timeoutInterval = timeout
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await URLSession.shared.data(for: request)
+        } catch {
+            throw LLMRouterError.badResponse("Ollama is not running · brew install ollama && ollama pull \(model)")
+        }
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+        if status == 404 { throw LLMRouterError.badResponse("model \(model) is not pulled · ollama pull \(model)") }
         guard status == 200 else { throw LLMRouterError.http(status, String(data: data, encoding: .utf8) ?? "") }
         guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
               let message = json["message"] as? [String: Any],

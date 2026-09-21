@@ -114,6 +114,20 @@ Anything else goes to the model, which either picks one of the same actions or, 
 needs clicking around inside an app (“reply to the last message”, “find the cheapest flight”),
 hands it to the agent with the full goal.
 
+## Free-form model: which one
+
+Tier 0 handles the everyday commands for free. The model only sees sentences it cannot place.
+
+| option | cost | setup |
+|---|---|---|
+| **Ollama, local** | $0, offline | `brew install ollama && ollama pull qwen2.5:1.5b`, then `HandsFreeNotch --use ollama` |
+| **Claude Haiku 4.5** | ≈ $0.001 per free-form command ($1 / $5 per million tokens) | `HandsFreeNotch --set-key sk-ant-…` |
+| Off | $0 | `HandsFreeNotch --use off` — tier 0 only |
+
+`HandsFreeNotch` here is `/Applications/HandsFreeNotch.app/Contents/MacOS/HandsFreeNotch`. The key goes in the
+login keychain; the Settings tab in the notch does the same thing with a text field. Clicking a
+red “not a command” pill opens Settings.
+
 ## Settings
 
 | setting | default | notes |
