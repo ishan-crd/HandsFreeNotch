@@ -35,10 +35,17 @@ Every command goes through three tiers, and stops at the first one that can answ
 | **1 · model** | Claude Haiku 4.5 (or a local Ollama model) returns one JSON action; no screenshot, no page text | ~300–600 ms | ≈ $0.0003 |
 | **2 · agent** | [typesafe-computer-use](https://github.com/awlevin/typesafe-computer-use) reads the screen and clicks through it | seconds per step | ≈ $0.0002 / step |
 
-Tier 0 runs on every partial transcript while you are still holding the key. When the words stop
-changing for 300 ms and match with high confidence, the action fires immediately; for “open
-Spotify” that is usually before you release. Anything that consumes the rest of your sentence
-(search, type) waits for the final transcript.
+Tier 0 runs on every partial transcript while you are still talking. The transcript is cut at
+“and”, “then”, “and then”, “after that”, and each finished piece runs the moment its words settle
+(300 ms), so
+
+```
+"open safari and search youtube and on youtube search faze rug"
+```
+
+opens Safari while you are still saying “search”, opens YouTube as you say “on youtube”, and
+runs the search when you stop. App, site and key commands fire as soon as they are certain;
+search and dictation wait until the sentence moves on, so “rock and roll” is one query.
 
 Speech recognition is Apple's `SFSpeechRecognizer` with on-device recognition. The audio engine is
 prepared at launch, so a key press starts capture in a few milliseconds and nothing leaves the Mac.
@@ -71,6 +78,8 @@ own to the Settings tab if anything is missing.
 ## Use
 
 Hold **right ⌥ Option** (changeable to right ⌘, right ⌃, left ⌃ or fn in Settings), speak, release.
+Or **tap** it once: the microphone stays open for chained commands until you tap again, say
+“stop”, or go quiet for 30 seconds.
 Click the notch to open the panel: recent commands with their timings, the command list, and
 settings. The panel also has a text field to try commands by typing.
 
@@ -97,7 +106,7 @@ Things the fast tier understands, with room for variation in wording:
 | play · pause · next song · previous | media keys |
 | scroll down · scroll up a lot · page down · top · bottom | scrolling under the cursor |
 | quit spotify · hide chrome · minimize · close window · lock screen · sleep · screenshot · show desktop · mission control · spotlight · empty trash | apps and the Mac |
-| open spotify then play · open chrome and then new tab | sequences, when every step is a fast-tier command |
+| open spotify then play · open chrome and then new tab and search for cats | chains; each step runs as soon as it is settled |
 | cancel · never mind | does nothing |
 
 Anything else goes to the model, which either picks one of the same actions or, when the request

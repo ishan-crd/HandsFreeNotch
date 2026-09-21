@@ -28,6 +28,9 @@ public final class SpeechListener {
     private var task: SFSpeechRecognitionTask?
     private var lastLevelAt: TimeInterval = 0
     private var finished = false
+    /// Bumped on every start. Callbacks from a cancelled task can arrive after the next listen has
+    /// begun; anything tagged with an old session is ignored so it cannot end the new one.
+    private var session = 0
 
     public enum ListenError: LocalizedError {
         case notAuthorized, microphoneDenied, recognizerUnavailable
@@ -77,6 +80,8 @@ public final class SpeechListener {
         onDevice = request.requiresOnDeviceRecognition
         self.request = request
         finished = false
+        session += 1
+        let current = session
 
         let input = engine.inputNode
         let format = input.outputFormat(forBus: 0)
@@ -91,27 +96,26 @@ public final class SpeechListener {
         isListening = true
 
         task = recognizer.recognitionTask(with: request) { [weak self] result, error in
-            guard let self else { return }
-            if let result {
-                let text = result.bestTranscription.formattedString
-                let isFinal = result.isFinal
-                DispatchQueue.main.async { [weak self] in
-                    guard let self, !(isFinal && self.finished) else { return }
-                    if isFinal { self.finished = true }
-                    self.onTranscript?(text, isFinal)
+            DispatchQueue.main.async { [weak self] in
+                guard let self, self.session == current else { return }
+                if let result {
+                    let text = result.bestTranscription.formattedString
+                    if result.isFinal {
+                        guard !self.finished else { return }
+                        self.finished = true
+                        self.teardown()
+                    }
+                    self.onTranscript?(text, result.isFinal)
                 }
-                if isFinal { self.teardown() }
-            }
-            if let error {
-                // Ending audio with nothing said reports as an error; that is a normal empty result.
-                let code = (error as NSError).code
-                let benign = code == 1110 || code == 216 || code == 301
-                DispatchQueue.main.async { [weak self] in
-                    guard let self, !self.finished else { return }
+                if let error {
+                    guard !self.finished else { return }
                     self.finished = true
+                    self.teardown()
+                    // Ending audio with nothing said reports as an error; that is a normal empty result.
+                    let code = (error as NSError).code
+                    let benign = code == 1110 || code == 216 || code == 301
                     if benign { self.onTranscript?("", true) } else { self.onError?(error) }
                 }
-                self.teardown()
             }
         }
     }
@@ -128,6 +132,7 @@ public final class SpeechListener {
     /// Stops and throws away whatever was heard.
     public func cancel() {
         finished = true
+        session += 1
         stop()
         task?.cancel()
         teardown()
@@ -138,6 +143,7 @@ public final class SpeechListener {
     public func forceFinal(_ text: String) {
         guard !finished else { return }
         finished = true
+        session += 1
         task?.cancel()
         teardown()
         onTranscript?(text, true)

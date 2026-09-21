@@ -7,12 +7,12 @@
 
 import Foundation
 
-/// The whole trip from a held key to a finished action: listen, route through the tiers, act.
+/// The whole trip from a held key to finished actions: listen, route through the tiers, act.
 ///
-/// Tier 0 runs on every partial transcript, so a command like "open Spotify" fires the moment
-/// the words stop changing, usually while the key is still held. Everything the fast tier
-/// cannot place goes to the small model once the sentence is complete, and only a goal the
-/// model marks as needing the screen goes to the agent.
+/// The transcript is consumed as it streams in. "open safari and search youtube and on youtube
+/// search faze rug" runs as three commands, each the moment its words are settled, while the
+/// user is still talking. What the fast tier cannot place goes to the small model once the
+/// sentence is complete, and only a goal the model marks as needing the screen goes to the agent.
 @MainActor
 public final class CommandPipeline {
     public enum State: Equatable {
@@ -37,24 +37,37 @@ public final class CommandPipeline {
     public var onLevel: ((Float) -> Void)?
     /// Every command that ran, newest first, for the panel.
     public private(set) var history: [(transcript: String, title: String, tier: Routed.Tier, milliseconds: Int)] = []
+    /// Listening stays on after the key is released, until a tap, "stop", or a long silence.
+    public private(set) var continuous = false
 
     public let speech: SpeechListener
     public let apps: AppIndex
     public let fast: FastRouter
     public var llm: LLMRouter?
     public var agent: AgentFallback?
-    /// How long a partial must stay unchanged before the fast tier acts on it.
+    /// What carries out an intent; tests swap in a recorder.
+    public var runner: (Intent) throws -> Void = ActionRunner.run
+    /// How long a partial must stay unchanged before its settled segments run.
     public var stableAfter: TimeInterval = 0.3
     /// How long to wait for the recognizer's final result after the key is released.
     public var finalGrace: TimeInterval = 0.6
+    /// Continuous mode switches itself off after this much silence.
+    public var continuousTimeout: TimeInterval = 30
 
-    private var lastPartial = ""
+    /// Words that end one command and start the next.
+    private static let separators: [[String]] = [["and", "then"], ["after", "that"], ["and", "also"], ["then"], ["also"], ["and"]]
+    /// These split even before a search or dictation; a bare "and" needs a command after it.
+    private static let strongSeparators: Set<String> = ["and then", "after that", "then"]
+
+    private var sessionWords: [String] = []   // the current recognizer session's transcript, normalized
+    private var consumedWords = 0             // how many of those already ran
     private var lastPartialAt: TimeInterval = 0
-    private var firedPrefix: String?
+    private var startedAt: TimeInterval = 0
     private var releasedAt: TimeInterval?
     private var stableCheck: DispatchWorkItem?
     private var graceCheck: DispatchWorkItem?
     private var idleReset: DispatchWorkItem?
+    private var silenceCheck: DispatchWorkItem?
     private var llmTask: Task<Void, Never>?
 
     public init(speech: SpeechListener, apps: AppIndex, llm: LLMRouter? = nil, agent: AgentFallback? = nil) {
@@ -65,7 +78,10 @@ public final class CommandPipeline {
         self.agent = agent
         speech.onTranscript = { [weak self] text, isFinal in self?.heard(text, isFinal: isFinal) }
         speech.onLevel = { [weak self] level in self?.onLevel?(level) }
-        speech.onError = { [weak self] error in self?.fail(error.localizedDescription) }
+        speech.onError = { [weak self] error in
+            self?.onLog?("speech error: \(error)")
+            self?.fail(error.localizedDescription)
+        }
     }
 
     /// Whether the microphone is open. The displayed state can briefly be `.done` while it is.
@@ -75,22 +91,31 @@ public final class CommandPipeline {
 
     public func beginListening() {
         if case .agent = state, agent?.isRunning == true { return }
+        // A listen that never closed out (recognizer hung) must not block the next one.
+        if speech.isListening { speech.cancel() }
+        graceCheck?.cancel()
+        stableCheck?.cancel()
         idleReset?.cancel()
         llmTask?.cancel()
-        lastPartial = ""
-        firedPrefix = nil
+        sessionWords = []
+        consumedWords = 0
         releasedAt = nil
+        startedAt = now()
         apps.refreshIfNeeded()
         do {
             try speech.start()
             state = .listening(transcript: "")
+            if continuous { armSilenceTimeout() }
         } catch {
+            onLog?("speech start failed: \(error)")
             fail(error.localizedDescription)
         }
     }
 
     public func endListening() {
-        guard isListening else { return }
+        guard speech.isListening else { return }
+        continuous = false
+        silenceCheck?.cancel()
         releasedAt = now()
         speech.stop()
         stableCheck?.cancel()
@@ -98,15 +123,30 @@ public final class CommandPipeline {
         // the last partial is what we have.
         let grace = DispatchWorkItem { [weak self] in
             guard let self else { return }
-            self.speech.forceFinal(self.lastPartial)
+            self.speech.forceFinal(self.sessionWords.joined(separator: " "))
         }
         graceCheck = grace
         DispatchQueue.main.asyncAfter(deadline: .now() + finalGrace, execute: grace)
     }
 
+    /// Keep the microphone open after the key is released, until `stopContinuous`.
+    public func startContinuous() {
+        continuous = true
+        if !speech.isListening { beginListening() } else { armSilenceTimeout() }
+        state = .listening(transcript: "")
+    }
+
+    public func stopContinuous() {
+        continuous = false
+        silenceCheck?.cancel()
+        if speech.isListening { endListening() } else { state = .idle }
+    }
+
     public func cancel() {
+        continuous = false
         stableCheck?.cancel()
         graceCheck?.cancel()
+        silenceCheck?.cancel()
         llmTask?.cancel()
         speech.cancel()
         agent?.stop()
@@ -116,75 +156,144 @@ public final class CommandPipeline {
     /// Route text as if it had been spoken, e.g. from the panel's text field or a test.
     public func handle(_ text: String) {
         releasedAt = now()
-        Task { await route(text) }
+        sessionWords = words(of: text)
+        consumedWords = 0
+        Task { await consume(final: true) }
     }
 
     // MARK: - Transcripts
 
+    private func words(of text: String) -> [String] {
+        Normalizer.normalize(text).split(separator: " ").map(String.init)
+    }
+
     private func heard(_ text: String, isFinal: Bool) {
+        ingest(text, isFinal: isFinal, listening: speech.isListening)
+    }
+
+    /// One transcript update from the recognizer (or a test standing in for it).
+    func ingest(_ text: String, isFinal: Bool, listening: Bool) {
+        onLog?("heard\(isFinal ? " (final)" : ""): \(text)")
+        let incoming = words(of: text)
+        // The recognizer may rewrite earlier words; never let that un-consume what already ran.
+        if incoming.count >= consumedWords || isFinal { sessionWords = incoming }
         if isFinal {
             graceCheck?.cancel()
             stableCheck?.cancel()
-            Task { await finish(text) }
+            Task { await consume(final: true) }
             return
         }
-        guard speech.isListening else { return }
-        if case .listening = state { state = .listening(transcript: text) }
-        let normalized = Normalizer.normalize(text)
-        guard normalized != lastPartial else { return }
-        lastPartial = normalized
+        guard listening else { return }
         lastPartialAt = now()
+        if case .listening = state { state = .listening(transcript: pendingText) }
+        if continuous { armSilenceTimeout() }
         stableCheck?.cancel()
-        let check = DispatchWorkItem { [weak self] in self?.tryEarlyFire() }
+        let check = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            Task { await self.consume(final: false) }
+        }
         stableCheck = check
         DispatchQueue.main.asyncAfter(deadline: .now() + stableAfter, execute: check)
     }
 
-    /// The fast tier acts on a transcript that has stopped changing, without waiting for release.
-    private func tryEarlyFire() {
-        guard speech.isListening, firedPrefix == nil, !lastPartial.isEmpty else { return }
-        // Only a near-certain match fires before release: a prefix of a longer name never does.
-        guard let routed = fast.route(lastPartial), routed.intent.firesEarly, routed.confidence >= 0.95 else { return }
-        firedPrefix = lastPartial
-        let started = lastPartialAt
-        perform(routed, transcript: lastPartial, since: started, keepListening: true)
+    /// The words heard so far that have not run yet.
+    private var pendingText: String {
+        sessionWords.dropFirst(min(consumedWords, sessionWords.count)).joined(separator: " ")
     }
 
-    private func finish(_ text: String) async {
-        let normalized = Normalizer.normalize(text)
-        if let firedPrefix {
-            // Whatever came after the part that already ran is its own command.
-            var rest = normalized
-            if rest.hasPrefix(firedPrefix) { rest = String(rest.dropFirst(firedPrefix.count)).trimmingCharacters(in: .whitespaces) }
-            else if Fuzzy.score(rest, firedPrefix) > 0.8 { rest = "" }
-            for joiner in ["and then ", "then ", "and "] where rest.hasPrefix(joiner) { rest = String(rest.dropFirst(joiner.count)) }
-            self.firedPrefix = nil
-            if rest.isEmpty { scheduleIdle(); return }
-            await route(rest)
-            return
+    // MARK: - Streaming segmentation
+
+    /// Runs every settled command in the pending words, in order. With `final`, whatever is left
+    /// runs too, through the model when the fast tier cannot place it.
+    private func consume(final: Bool) async {
+        while true {
+            // A separator left over from the previous cut ("… and") is not part of the next command.
+            while let sep = Self.separators.first(where: { Array(sessionWords.dropFirst(consumedWords).prefix($0.count)) == $0 }) {
+                consumedWords += sep.count
+            }
+            let rest = Array(sessionWords.dropFirst(min(consumedWords, sessionWords.count)))
+            guard !rest.isEmpty else { break }
+            let started = final ? (releasedAt ?? lastPartialAt) : lastPartialAt
+
+            guard let cut = nextSegment(in: rest, final: final) else {
+                // Nothing settled yet. With a final transcript, the remainder is one command.
+                if final { await route(rest.joined(separator: " "), since: started) ; consumedWords = sessionWords.count }
+                break
+            }
+            let text = rest[0..<cut.length].joined(separator: " ")
+            consumedWords += cut.length + cut.separator
+            if let routed = fast.route(text) {
+                perform(routed, transcript: text, since: started, keepListening: speech.isListening)
+                // Give the app a beat to come forward before the next keystroke lands in it.
+                if cut.separator > 0 || final { try? await Task.sleep(nanoseconds: 250_000_000) }
+            } else {
+                await route(text, since: started)
+            }
         }
-        guard !normalized.isEmpty else { state = .idle; return }
-        await route(normalized)
+        if final, !speech.isListening, !continuous, case .listening = state { state = .idle }
+        if final, continuous {
+            // The sentence is over; start a fresh session so the transcript stays short.
+            sessionWords = []
+            consumedWords = 0
+            if !speech.isListening { beginListening() }
+        }
+    }
+
+    private struct Cut { let length: Int; let separator: Int }
+
+    /// The first command in `rest` that can run now: its word count, and the separator after it.
+    private func nextSegment(in rest: [String], final: Bool) -> Cut? {
+        // Candidate cut points: each separator, then the end of the words.
+        var candidates: [(length: Int, separator: Int, strong: Bool)] = []
+        var i = 0
+        while i < rest.count {
+            for sep in Self.separators where i + sep.count <= rest.count && Array(rest[i..<i + sep.count]) == sep {
+                if i > 0 { candidates.append((i, sep.count, Self.strongSeparators.contains(sep.joined(separator: " ")))) }
+                i += sep.count - 1
+                break
+            }
+            i += 1
+        }
+        for candidate in candidates {
+            let text = rest[0..<candidate.length].joined(separator: " ")
+            guard let routed = fast.route(text) else { continue }
+            // "open safari and …": the app command is complete on its own.
+            if routed.intent.firesEarly, routed.confidence >= 0.9 { return Cut(length: candidate.length, separator: candidate.separator) }
+            // "search youtube and on youtube search …": a search ends when a command follows it.
+            if candidate.strong { return Cut(length: candidate.length, separator: candidate.separator) }
+            let after = Array(rest[(candidate.length + candidate.separator)...])
+            if let nextCut = firstSeparator(in: after), fast.route(after[0..<nextCut].joined(separator: " ")) != nil {
+                return Cut(length: candidate.length, separator: candidate.separator)
+            }
+            if fast.route(after.joined(separator: " ")) != nil, after.count >= 2 || final {
+                return Cut(length: candidate.length, separator: candidate.separator)
+            }
+        }
+        // No separator settled it. The whole remainder runs when it is a complete, certain command.
+        let whole = rest.joined(separator: " ")
+        if let routed = fast.route(whole) {
+            if final { return Cut(length: rest.count, separator: 0) }
+            if routed.intent.firesEarly, routed.confidence >= 0.95 { return Cut(length: rest.count, separator: 0) }
+        }
+        return nil
+    }
+
+    private func firstSeparator(in words: [String]) -> Int? {
+        var i = 0
+        while i < words.count {
+            for sep in Self.separators where i + sep.count <= words.count && Array(words[i..<i + sep.count]) == sep {
+                return i > 0 ? i : nil
+            }
+            i += 1
+        }
+        return nil
     }
 
     // MARK: - Routing
 
-    private func route(_ text: String) async {
-        let started = releasedAt ?? now()
-        let parts = Normalizer.splitSequence(text)
-        // A sequence runs only when every step is a fast-tier command; otherwise the model sees the whole sentence.
-        if parts.count > 1 {
-            let routedParts = parts.compactMap { fast.route($0) }
-            if routedParts.count == parts.count {
-                for r in routedParts {
-                    perform(r, transcript: text, since: started, keepListening: false)
-                    try? await Task.sleep(nanoseconds: 350_000_000)
-                }
-                return
-            }
-        }
+    private func route(_ text: String, since started: TimeInterval) async {
         if let routed = fast.route(text) {
-            perform(routed, transcript: text, since: started, keepListening: false)
+            perform(routed, transcript: text, since: started, keepListening: speech.isListening)
             return
         }
         guard let llm else {
@@ -203,7 +312,7 @@ public final class CommandPipeline {
                 if case let .agent(goal) = routed.intent {
                     self.runAgent(goal: goal.isEmpty ? text : goal)
                 } else {
-                    self.perform(routed, transcript: text, since: started, keepListening: false)
+                    self.perform(routed, transcript: text, since: started, keepListening: self.speech.isListening)
                 }
             } catch is CancellationError {
             } catch {
@@ -216,9 +325,12 @@ public final class CommandPipeline {
 
     private func perform(_ routed: Routed, transcript: String, since started: TimeInterval, keepListening: Bool) {
         if case .help = routed.intent { state = .help; scheduleIdle(after: 8); return }
-        if case .cancel = routed.intent { state = .idle; return }
+        if case .cancel = routed.intent {
+            if continuous { stopContinuous() } else { state = .idle }
+            return
+        }
         do {
-            try ActionRunner.run(routed.intent)
+            try runner(routed.intent)
             let ms = Int((now() - started) * 1000)
             history.insert((transcript, routed.intent.title, routed.tier, ms), at: 0)
             if history.count > 20 { history.removeLast() }
@@ -227,7 +339,7 @@ public final class CommandPipeline {
                 // Show the result but keep the microphone open for the rest of the sentence.
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.9) { [weak self] in
                     guard let self, self.speech.isListening, case .done = self.state else { return }
-                    self.state = .listening(transcript: "")
+                    self.state = .listening(transcript: self.pendingText)
                 }
             } else {
                 scheduleIdle()
@@ -280,6 +392,17 @@ public final class CommandPipeline {
         }
         idleReset = reset
         DispatchQueue.main.asyncAfter(deadline: .now() + seconds, execute: reset)
+    }
+
+    private func armSilenceTimeout() {
+        silenceCheck?.cancel()
+        let check = DispatchWorkItem { [weak self] in
+            guard let self, self.continuous else { return }
+            self.onLog?("continuous: silence timeout")
+            self.stopContinuous()
+        }
+        silenceCheck = check
+        DispatchQueue.main.asyncAfter(deadline: .now() + continuousTimeout, execute: check)
     }
 
     private func now() -> TimeInterval { ProcessInfo.processInfo.systemUptime }

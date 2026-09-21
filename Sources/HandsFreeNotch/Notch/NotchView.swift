@@ -75,7 +75,8 @@ struct NotchView: View {
             case .idle:
                 EmptyView()
             case let .listening(transcript):
-                pill(icon: "mic.fill", tint: .red, text: transcript.isEmpty ? "Listening…" : transcript, dim: transcript.isEmpty) {
+                let hint = vm.pipeline.continuous ? "Listening — tap \(vm.settings.hotkey.title) or say stop" : "Listening…"
+                pill(icon: "mic.fill", tint: .red, text: transcript.isEmpty ? hint : transcript, dim: transcript.isEmpty) {
                     LevelBars(level: vm.level)
                 }
             case let .thinking(transcript):

@@ -217,19 +217,27 @@ public final class FastRouter {
         var engine: SearchEngine = .google
         var query = text
 
-        // Leading engine: "youtube cats", "youtube search cats"
-        for (name, e) in engineNames where query.hasPrefix(name + " ") {
+        // "on youtube search cats", "in google look up cats"
+        for prefix in ["on ", "in ", "using "] where query.hasPrefix(prefix) {
+            for (name, _) in engineNames where query.hasPrefix(prefix + name + " ") { query = String(query.dropFirst(prefix.count)) }
+        }
+        // Leading engine: "youtube cats", "youtube search cats"; a bare "youtube" is the site.
+        for (name, e) in engineNames where query.hasPrefix(name + " ") || query == name {
             engine = e
-            query = String(query.dropFirst(name.count + 1))
-            for v in ["search for ", "search ", "for "] where query.hasPrefix(v) { query = String(query.dropFirst(v.count)) }
+            query = query == name ? "" : String(query.dropFirst(name.count + 1))
+            for v in ["search for ", "search ", "look up ", "for "] where query.hasPrefix(v) { query = String(query.dropFirst(v.count)) }
+            if query.isEmpty { return home(of: engine) }
             return Routed(.search(query: query, engine: engine), confidence: 0.95, tier: .fast)
         }
         guard let (verb, rest) = strip(verbs: verbs, from: query) else { return nil }
         query = rest
-        // "search youtube for cats"
-        for (name, e) in engineNames where query.hasPrefix(name + " for ") {
-            engine = e
-            query = String(query.dropFirst(name.count + 5))
+        // "search youtube" opens the site; "search youtube for cats" and "search on youtube cats" search it.
+        for (name, e) in engineNames {
+            if query == name || query == "on " + name || query == "in " + name { return home(of: e) }
+            for form in [name + " for ", "on " + name + " for ", "on " + name + " ", "in " + name + " "] where query.hasPrefix(form) {
+                engine = e
+                query = String(query.dropFirst(form.count))
+            }
         }
         // "cats on youtube", "everest in wikipedia"
         for (name, e) in engineNames {
@@ -244,6 +252,12 @@ public final class FastRouter {
         query = query.trimmingCharacters(in: .whitespaces)
         guard !query.isEmpty else { return nil }
         return Routed(.search(query: query, engine: engine), confidence: 0.9, tier: .fast)
+    }
+
+    private func home(of engine: SearchEngine) -> Routed? {
+        guard let url = engine.url(for: "").flatMap({ URL(string: "https://" + ($0.host ?? "")) }) else { return nil }
+        // Below the early-fire bar on purpose: "search youtube" may still become "search youtube for cats".
+        return Routed(.openURL(url), confidence: 0.9, tier: .fast)
     }
 
     // MARK: - type / press

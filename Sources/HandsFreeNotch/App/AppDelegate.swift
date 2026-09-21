@@ -39,9 +39,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             MainActor.assumeIsolated { self?.pipeline.handle(text) }
         }
 
+        // Hold the key to talk; a quick tap keeps the microphone open until the next tap or "stop".
+        var pressedAt: TimeInterval = 0
+        var tapStopped = false
         hotkey = HotkeyMonitor(hotkey: settings.hotkey)
-        hotkey.onPress = { [weak self] in self?.pipeline.beginListening() }
-        hotkey.onRelease = { [weak self] in self?.pipeline.endListening() }
+        hotkey.onPress = { [weak self] in
+            guard let self else { return }
+            pressedAt = ProcessInfo.processInfo.systemUptime
+            if self.pipeline.continuous {
+                tapStopped = true
+                self.pipeline.stopContinuous()
+            } else {
+                tapStopped = false
+                self.pipeline.beginListening()
+            }
+        }
+        hotkey.onRelease = { [weak self] in
+            guard let self, !tapStopped else { return }
+            if ProcessInfo.processInfo.systemUptime - pressedAt < 0.35 {
+                self.pipeline.startContinuous()
+            } else {
+                self.pipeline.endListening()
+            }
+        }
         hotkey.start()
 
         NotificationCenter.default.addObserver(self, selector: #selector(rebuildWindow), name: NSApplication.didChangeScreenParametersNotification, object: nil)

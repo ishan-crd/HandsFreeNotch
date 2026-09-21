@@ -92,7 +92,7 @@ struct PanelView: View {
             }
 
             if vm.history.isEmpty {
-                Text("Nothing yet. Hold \(vm.settings.hotkey.title), say “open Safari”, let go.")
+                Text("Nothing yet. Hold \(vm.settings.hotkey.title) and talk, or tap it once to keep listening. Chain with “and” / “then”.")
                     .font(.system(size: 11.5))
                     .foregroundStyle(.white.opacity(0.5))
                     .padding(.top, 8)
@@ -166,7 +166,8 @@ struct HelpView: View {
         ("play · pause · next song · previous", "media"),
         ("scroll down · scroll up a lot · top · bottom", "scrolling"),
         ("quit spotify · hide chrome · lock screen · screenshot", "windows and Mac"),
-        ("open spotify then play · anything else goes to the model", "sequences and free-form"),
+        ("open safari and search youtube and on youtube search faze rug", "chains run as you speak"),
+        ("stop · anything else goes to the model", "end continuous mode · free-form"),
     ]
 
     var body: some View {
