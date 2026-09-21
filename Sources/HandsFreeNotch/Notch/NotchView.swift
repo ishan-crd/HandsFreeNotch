@@ -18,6 +18,7 @@ struct NotchView: View {
                 .frame(width: vm.notchSize.width, height: vm.notchSize.height)
                 .clipped()
         }
+        .offset(x: vm.horizontalOffset)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         // Width follows the words as they arrive, so the resize must be quick and never bounce.
         .animation(vm.status == .opened ? vm.animation : .easeOut(duration: 0.14), value: vm.notchSize)
@@ -103,18 +104,18 @@ struct NotchView: View {
         }
     }
 
-    /// Icon and one line of text left of the camera housing, sized to the words; the indicator
-    /// alone on the right. The housing itself stays empty.
+    /// Icon and text left of the camera housing; the text continues on the right strip when it
+    /// is long, followed by the indicator. The housing itself stays empty.
     private func pill<Trailing: View>(icon: String, tint: Color, dim: Bool, head: Bool, @ViewBuilder trailing: () -> Trailing) -> some View {
-        let (text, font) = vm.pillText
+        let layout = vm.pill
         return HStack(spacing: 0) {
             HStack(spacing: 6) {
                 Image(systemName: icon)
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(tint)
                     .frame(width: 14)
-                Text(text)
-                    .font(Font(font))
+                Text(layout.leftText)
+                    .font(Font(layout.font))
                     .foregroundStyle(.white.opacity(dim ? 0.5 : 0.92))
                     .lineLimit(1)
                     .truncationMode(head ? .head : .tail)
@@ -122,14 +123,22 @@ struct NotchView: View {
             }
             .padding(.leading, 12)
             .padding(.trailing, 10)
-            .frame(width: vm.leftWidth)
+            .frame(width: layout.left)
             Color.clear.frame(width: vm.hardwareNotch.width)
-            HStack(spacing: 0) {
+            HStack(spacing: 8) {
+                if !layout.rightText.isEmpty {
+                    Text(layout.rightText)
+                        .font(Font(layout.font))
+                        .foregroundStyle(.white.opacity(dim ? 0.5 : 0.92))
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                }
                 Spacer(minLength: 0)
                 trailing()
             }
-            .padding(.trailing, 12)
-            .frame(width: vm.rightWidth)
+            .padding(.leading, layout.rightText.isEmpty ? 0 : 8)
+            .padding(.trailing, PillLayout.trailingPadding)
+            .frame(width: layout.right)
         }
         .transition(.opacity)
     }

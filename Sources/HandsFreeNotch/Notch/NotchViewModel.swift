@@ -41,43 +41,6 @@ final class NotchViewModel {
         deviceNotchRect.size == .zero ? CGSize(width: 180, height: 32) : deviceNotchRect.size
     }
 
-    /// The one line of text the pill shows, and its font.
-    var pillText: (text: String, font: NSFont) {
-        switch pipelineState {
-        case .idle, .agent, .help: return ("", .systemFont(ofSize: 12))
-        case let .listening(t): return (t.isEmpty ? (pipeline.continuous ? "Listening · tap to stop" : "Listening…") : t, .systemFont(ofSize: 12, weight: .medium))
-        case let .thinking(t): return (t, .systemFont(ofSize: 12, weight: .medium))
-        case let .done(title, _, _): return (title, .systemFont(ofSize: 12, weight: .medium))
-        case let .failed(m): return (m, .systemFont(ofSize: 11, weight: .medium))
-        }
-    }
-
-    /// Width of the strip left of the physical notch: icon + one line of text, sized to fit.
-    var leftWidth: CGFloat {
-        let (text, font) = pillText
-        guard !text.isEmpty else { return 0 }
-        let measured = (text as NSString).size(withAttributes: [.font: font]).width
-        let chrome: CGFloat = 12 + 14 + 6 + 10 + 10  // padding, icon, gap, padding, slack for SwiftUI's text metrics
-        let cap: CGFloat
-        switch pipelineState {
-        case .failed: cap = 420
-        case .thinking: cap = 260
-        default: cap = 300
-        }
-        return min(ceil(measured) + chrome, cap)
-    }
-
-    /// Width of the strip right of the physical notch: just the indicator.
-    var rightWidth: CGFloat {
-        switch pipelineState {
-        case .idle, .agent, .help: return 0
-        case .listening: return 40
-        case .thinking: return 36
-        case .done: return 60
-        case .failed: return 10
-        }
-    }
-
     init(pipeline: CommandPipeline) {
         self.pipeline = pipeline
         speechGranted = pipeline.speech.authorized
@@ -87,10 +50,32 @@ final class NotchViewModel {
             self.pipelineState = state
             self.history = pipeline.history
             if case .idle = state { self.level = 0 }
+            let p = self.pill
+            if p.left > 0 {
+                pipeline.onLog?("pill: left \(Int(p.left)) | housing \(Int(self.hardwareNotch.width)) | right \(Int(p.right)) | offset \(Int(p.offset)) | “\(p.leftText)” ‖ “\(p.rightText)”")
+            }
         }
         pipeline.onLevel = { [weak self] level in
             guard let self, self.pipeline.isListening else { return }
             self.level = level
+        }
+    }
+
+    /// The pill's text and strips for the current state.
+    var pill: PillLayout {
+        switch pipelineState {
+        case .idle, .agent, .help:
+            return PillLayout()
+        case let .listening(t):
+            let text = t.isEmpty ? (pipeline.continuous ? "Listening · tap to stop" : "Listening…") : t
+            return PillLayout.make(text: text, font: .systemFont(ofSize: 12, weight: .medium), keepTail: true, indicator: 24)
+        case let .thinking(t):
+            return PillLayout.make(text: t, font: .systemFont(ofSize: 12, weight: .medium), keepTail: false, indicator: 18)
+        case let .done(title, _, ms):
+            let timing = PillLayout.width(of: "\(ms) ms", .monospacedDigitSystemFont(ofSize: 10, weight: .medium))
+            return PillLayout.make(text: title, font: .systemFont(ofSize: 12, weight: .medium), keepTail: false, indicator: ceil(timing) + 4)
+        case let .failed(m):
+            return PillLayout.make(text: m, font: .systemFont(ofSize: 11, weight: .medium), keepTail: false, indicator: 0)
         }
     }
 
@@ -101,9 +86,20 @@ final class NotchViewModel {
         let h = max(base.height, 30)
         switch pipelineState {
         case .idle: return CGSize(width: base.width, height: base.height)
-        case .listening, .thinking, .done, .failed: return CGSize(width: base.width + leftWidth + rightWidth, height: h)
+        case .listening, .thinking, .done, .failed:
+            let p = pill
+            return CGSize(width: base.width + p.left + p.right, height: h)
         case .agent: return CGSize(width: 520, height: 140 + base.height)
         case .help: return CGSize(width: 560, height: 170 + base.height)
+        }
+    }
+
+    /// Horizontal shift that keeps the pill's empty gap on the camera housing.
+    var horizontalOffset: CGFloat {
+        if status == .opened { return 0 }
+        switch pipelineState {
+        case .listening, .thinking, .done, .failed: return pill.offset
+        default: return 0
         }
     }
 
@@ -115,7 +111,7 @@ final class NotchViewModel {
 
     var openedRect: CGRect {
         CGRect(
-            x: screenRect.origin.x + (screenRect.width - notchSize.width) / 2,
+            x: screenRect.origin.x + (screenRect.width - notchSize.width) / 2 + horizontalOffset,
             y: screenRect.origin.y + screenRect.height - notchSize.height,
             width: notchSize.width,
             height: notchSize.height
