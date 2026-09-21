@@ -17,19 +17,32 @@ if let index = CommandLine.arguments.firstIndex(of: "--say"), index + 1 < Comman
     exit(0)
 }
 
-// `HandsFreeNotch --set-key sk-ant-…` stores the Anthropic key in the keychain and switches the
-// running app to Claude; `--use ollama|anthropic|off` picks the free-form model. Both exit at once.
+// `HandsFreeNotch --set-key sk-ant-…` (Anthropic) or `--set-key openrouter sk-or-…` stores the key
+// in the keychain and switches the running app to that provider; `--use ollama|anthropic|openrouter|off`
+// picks the free-form model. All exit at once.
 if let index = CommandLine.arguments.firstIndex(of: "--set-key"), index + 1 < CommandLine.arguments.count {
-    Keychain.write(CommandLine.arguments[index + 1], account: "anthropic")
-    UserDefaults.standard.set(LLMProvider.anthropic.rawValue, forKey: "provider")
+    var args = Array(CommandLine.arguments[(index + 1)...])
+    var provider = LLMProvider.anthropic
+    if args.count >= 2, let named = LLMProvider(rawValue: args[0].lowercased()) { provider = named; args.removeFirst() }
+    let account = provider == .openrouter ? "openrouter" : "anthropic"
+    Keychain.write(args[0], account: account)
+    UserDefaults.standard.set(provider.rawValue, forKey: "provider")
     DistributedNotificationCenter.default().postNotificationName(reloadNotification, object: nil, userInfo: nil, deliverImmediately: true)
-    print("key saved to the keychain; free-form model: Claude Haiku 4.5")
+    print("key saved to the keychain; free-form model: \(provider.title)")
+    exit(0)
+}
+if let index = CommandLine.arguments.firstIndex(of: "--model"), index + 1 < CommandLine.arguments.count {
+    let model = CommandLine.arguments[index + 1]
+    let key = model.hasSuffix(":free") || model.contains("/") ? "openrouterModel" : (model.hasPrefix("claude") ? "anthropicModel" : "ollamaModel")
+    UserDefaults.standard.set(model, forKey: key)
+    DistributedNotificationCenter.default().postNotificationName(reloadNotification, object: nil, userInfo: nil, deliverImmediately: true)
+    print("\(key.replacingOccurrences(of: "Model", with: "")) model: \(model)")
     exit(0)
 }
 if let index = CommandLine.arguments.firstIndex(of: "--use"), index + 1 < CommandLine.arguments.count {
     let choice = CommandLine.arguments[index + 1].lowercased()
     guard let provider = LLMProvider(rawValue: choice == "off" ? "none" : choice) else {
-        print("usage: --use anthropic | ollama | off"); exit(2)
+        print("usage: --use anthropic | openrouter | ollama | off"); exit(2)
     }
     UserDefaults.standard.set(provider.rawValue, forKey: "provider")
     DistributedNotificationCenter.default().postNotificationName(reloadNotification, object: nil, userInfo: nil, deliverImmediately: true)

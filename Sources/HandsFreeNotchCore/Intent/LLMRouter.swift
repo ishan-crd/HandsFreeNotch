@@ -241,3 +241,81 @@ public struct OllamaRouter: LLMRouter {
         return Routed(try payload.intent(apps: apps), confidence: 0.7, tier: .llm)
     }
 }
+
+// MARK: - OpenRouter (OpenAI-compatible)
+
+/// Any OpenAI-compatible chat endpoint; OpenRouter's free models by default. The route is asked
+/// for as a forced tool call; models that answer in plain JSON instead are parsed leniently.
+public struct OpenRouterRouter: LLMRouter {
+    public static let defaultModel = "google/gemma-4-26b-a4b-it:free"
+    public var apiKey: String
+    public var model: String
+    public var endpoint = URL(string: "https://openrouter.ai/api/v1/chat/completions")!
+    public var timeout: TimeInterval = 12
+
+    public init(apiKey: String, model: String = OpenRouterRouter.defaultModel) {
+        self.apiKey = apiKey
+        self.model = model
+    }
+
+    public var label: String { "openrouter/\(model)" }
+
+    public func route(_ transcript: String, apps: AppIndex) async throws -> Routed? {
+        guard !apiKey.isEmpty else { throw LLMRouterError.missingKey }
+        let tool: [String: Any] = [
+            "type": "function",
+            "function": [
+                "name": "route",
+                "description": "The single action to take for the spoken command.",
+                "parameters": RoutePayload.schema,
+            ],
+        ]
+        let body: [String: Any] = [
+            "model": model,
+            "max_tokens": 300,
+            "temperature": 0,
+            "tools": [tool],
+            "tool_choice": ["type": "function", "function": ["name": "route"]],
+            "messages": [
+                ["role": "system", "content": RoutePayload.systemPrompt(apps: apps.names) + "\nCall the route tool exactly once. If you cannot call tools, reply with the JSON object only."],
+                ["role": "user", "content": transcript],
+            ],
+        ]
+        var request = URLRequest(url: endpoint)
+        request.httpMethod = "POST"
+        request.timeoutInterval = timeout
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        request.setValue("https://github.com/ishan-crd/HandsFreeNotch", forHTTPHeaderField: "HTTP-Referer")
+        request.setValue("HandsFreeNotch", forHTTPHeaderField: "X-Title")
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+        if status == 429 { throw LLMRouterError.badResponse("OpenRouter rate limit for free models reached; try again later or add credits") }
+        guard status == 200 else { throw LLMRouterError.http(status, String(data: data, encoding: .utf8) ?? "") }
+        guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let choices = json["choices"] as? [[String: Any]],
+              let message = choices.first?["message"] as? [String: Any] else {
+            throw LLMRouterError.badResponse("no choices")
+        }
+        let payloadData: Data
+        if let calls = message["tool_calls"] as? [[String: Any]],
+           let function = calls.first?["function"] as? [String: Any],
+           let arguments = function["arguments"] as? String, let d = arguments.data(using: .utf8) {
+            payloadData = d
+        } else if let content = message["content"] as? String, let d = Self.extractJSON(content) {
+            payloadData = d
+        } else {
+            throw LLMRouterError.badResponse("no tool call or JSON in the reply")
+        }
+        let payload = try JSONDecoder().decode(RoutePayload.self, from: payloadData)
+        return Routed(try payload.intent(apps: apps), confidence: 0.75, tier: .llm)
+    }
+
+    /// The first {...} in a reply, with any ```json fences stripped.
+    static func extractJSON(_ text: String) -> Data? {
+        guard let open = text.firstIndex(of: "{"), let close = text.lastIndex(of: "}"), open < close else { return nil }
+        return String(text[open...close]).data(using: .utf8)
+    }
+}

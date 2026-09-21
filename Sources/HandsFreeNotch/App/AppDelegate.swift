@@ -30,7 +30,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         pipeline = CommandPipeline(speech: speech, apps: apps, llm: settings.makeLLM(), agent: settings.makeAgent())
 
         // Settings changes take effect on the next command, no restart.
-        withObservationTracking { _ = settings.provider; _ = settings.anthropicKey; _ = settings.anthropicModel; _ = settings.ollamaModel; _ = settings.agentPath; _ = settings.hotkey } onChange: { [weak self] in
+        withObservationTracking { _ = settings.provider; _ = settings.anthropicKey; _ = settings.anthropicModel; _ = settings.openrouterKey; _ = settings.openrouterModel; _ = settings.ollamaModel; _ = settings.agentPath; _ = settings.hotkey } onChange: { [weak self] in
             DispatchQueue.main.async { self?.applySettings() }
         }
 
@@ -95,7 +95,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         pipeline.agent = settings.makeAgent()
         hotkey.hotkey = settings.hotkey
         // Re-arm the observation; withObservationTracking fires once per change.
-        withObservationTracking { _ = settings.provider; _ = settings.anthropicKey; _ = settings.anthropicModel; _ = settings.ollamaModel; _ = settings.agentPath; _ = settings.hotkey } onChange: { [weak self] in
+        withObservationTracking { _ = settings.provider; _ = settings.anthropicKey; _ = settings.anthropicModel; _ = settings.openrouterKey; _ = settings.openrouterModel; _ = settings.ollamaModel; _ = settings.agentPath; _ = settings.hotkey } onChange: { [weak self] in
             DispatchQueue.main.async { self?.applySettings() }
         }
     }

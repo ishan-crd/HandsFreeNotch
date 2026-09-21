@@ -192,6 +192,7 @@ struct HelpView: View {
 struct SettingsView: View {
     @Bindable var vm: NotchViewModel
     @State private var keyDraft = Settings.shared.anthropicKey
+    @State private var openrouterDraft = Settings.shared.openrouterKey
 
     var body: some View {
         @Bindable var settings = vm.settings
@@ -224,6 +225,21 @@ struct SettingsView: View {
                         TextField(AnthropicRouter.defaultModel, text: $settings.anthropicModel)
                             .textFieldStyle(.roundedBorder)
                             .frame(width: 220)
+                    }
+                }
+                if settings.provider == .openrouter {
+                    row("OpenRouter API key") {
+                        SecureField("sk-or-…", text: $openrouterDraft)
+                            .textFieldStyle(.roundedBorder)
+                            .frame(width: 220)
+                            .onSubmit { settings.openrouterKey = openrouterDraft }
+                        Button("Save") { settings.openrouterKey = openrouterDraft }
+                            .controlSize(.small)
+                    }
+                    row("Model") {
+                        TextField(OpenRouterRouter.defaultModel, text: $settings.openrouterModel)
+                            .textFieldStyle(.roundedBorder)
+                            .frame(width: 280)
                     }
                 }
                 if settings.provider == .ollama {

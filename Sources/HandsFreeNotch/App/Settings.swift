@@ -10,7 +10,7 @@ import HandsFreeNotchCore
 import Observation
 
 enum LLMProvider: String, CaseIterable, Identifiable {
-    case none, anthropic, ollama
+    case none, anthropic, openrouter, ollama
 
     var id: String { rawValue }
 
@@ -18,6 +18,7 @@ enum LLMProvider: String, CaseIterable, Identifiable {
         switch self {
         case .none: return "Off (fast tier only)"
         case .anthropic: return "Claude Haiku 4.5"
+        case .openrouter: return "OpenRouter (free models)"
         case .ollama: return "Ollama (local)"
         }
     }
@@ -35,6 +36,8 @@ final class Settings {
     var agentPath: String { didSet { defaults.set(agentPath, forKey: "agentPath") } }
     var launchAtLogin: Bool { didSet { defaults.set(launchAtLogin, forKey: "launchAtLogin") } }
     var anthropicKey: String { didSet { Keychain.write(anthropicKey, account: "anthropic") } }
+    var openrouterKey: String { didSet { Keychain.write(openrouterKey, account: "openrouter") } }
+    var openrouterModel: String { didSet { defaults.set(openrouterModel, forKey: "openrouterModel") } }
 
     private let defaults = UserDefaults.standard
 
@@ -47,6 +50,9 @@ final class Settings {
         } else if keySource == "keychain" {
             anthropicKey = ""  // removed with `--set-key ""`
         }
+        let openrouter = Keychain.read("openrouter") ?? ""
+        if openrouter != openrouterKey { openrouterKey = openrouter }
+        openrouterModel = defaults.string(forKey: "openrouterModel") ?? OpenRouterRouter.defaultModel
     }
 
     private init() {
@@ -54,6 +60,8 @@ final class Settings {
         provider = LLMProvider(rawValue: defaults.string(forKey: "provider") ?? "") ?? .anthropic
         anthropicModel = defaults.string(forKey: "anthropicModel") ?? AnthropicRouter.defaultModel
         ollamaModel = defaults.string(forKey: "ollamaModel") ?? OllamaRouter.defaultModel
+        openrouterModel = defaults.string(forKey: "openrouterModel") ?? OpenRouterRouter.defaultModel
+        openrouterKey = Keychain.read("openrouter") ?? ProcessInfo.processInfo.environment["OPENROUTER_API_KEY"] ?? Settings.dotEnv()["OPENROUTER_API_KEY"] ?? ""
         agentPath = defaults.string(forKey: "agentPath") ?? Settings.guessAgentPath()
         launchAtLogin = defaults.bool(forKey: "launchAtLogin")
         // First non-empty source wins: keychain, the environment, then the dotenv file.
@@ -90,6 +98,7 @@ final class Settings {
         switch provider {
         case .none: return nil
         case .anthropic: return anthropicKey.isEmpty ? nil : AnthropicRouter(apiKey: anthropicKey, model: anthropicModel)
+        case .openrouter: return openrouterKey.isEmpty ? nil : OpenRouterRouter(apiKey: openrouterKey, model: openrouterModel)
         case .ollama: return OllamaRouter(model: ollamaModel)
         }
     }

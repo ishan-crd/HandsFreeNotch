@@ -121,20 +121,23 @@ Tier 0 handles the everyday commands for free. The model only sees sentences it 
 | option | cost | setup |
 |---|---|---|
 | **Ollama, local** | $0, offline | `brew install ollama && ollama pull qwen2.5:1.5b`, then `HandsFreeNotch --use ollama` |
+| **OpenRouter free models** | $0 (rate-limited: ~50 requests/day, 1000/day once the account has $10 of credit) | key from openrouter.ai/keys, then `HandsFreeNotch --set-key openrouter sk-or-…` |
 | **Claude Haiku 4.5** | ≈ $0.001 per free-form command ($1 / $5 per million tokens) | `HandsFreeNotch --set-key sk-ant-…` |
 | Off | $0 | `HandsFreeNotch --use off` — tier 0 only |
 
-`HandsFreeNotch` here is `/Applications/HandsFreeNotch.app/Contents/MacOS/HandsFreeNotch`. The key goes in the
+`HandsFreeNotch` here is `/Applications/HandsFreeNotch.app/Contents/MacOS/HandsFreeNotch`. Keys go in the
 login keychain; the Settings tab in the notch does the same thing with a text field. Clicking a
-red “not a command” pill opens Settings.
+red “not a command” pill opens Settings. `--model <name>` changes the model for the matching
+provider, e.g. `--model qwen/qwen3.8-27b:free`; the OpenRouter default is
+`google/gemma-4-26b-a4b-it:free`, a fast mixture-of-experts model that supports tool calls.
 
 ## Settings
 
 | setting | default | notes |
 |---|---|---|
 | Push to talk | right ⌥ | a modifier key, so holding it never types anything |
-| Free-form model | Claude Haiku 4.5 | or **Ollama** (`qwen2.5:1.5b` by default, free and offline), or **Off** to run tier 0 only |
-| Anthropic API key | — | stored in the login keychain; `ANTHROPIC_API_KEY` in the environment or in `~/.config/handsfreenotch/.env` also works |
+| Free-form model | Claude Haiku 4.5 | or **OpenRouter** (free models), **Ollama** (`qwen2.5:1.5b`, free and offline), or **Off** for tier 0 only |
+| API keys | — | stored in the login keychain; `ANTHROPIC_API_KEY` / `OPENROUTER_API_KEY` in the environment or in `~/.config/handsfreenotch/.env` also work |
 | Screen agent path | auto-detected | a checkout of typesafe-computer-use with `uv sync` done and its own `.env` |
 | Launch at login | off | |
 
