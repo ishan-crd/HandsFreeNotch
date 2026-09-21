@@ -70,6 +70,22 @@ final class StreamingTests: XCTestCase {
         XCTAssertEqual(ran, ["Open Google Chrome"], "a multi-word app name is not cut in half")
     }
 
+    func testTrailingSearchRunsWhenTheFinalTranscriptIsEmpty() async {
+        // The recognizer sometimes closes a session with an empty final result; the last partial
+        // is then all we have and must still run.
+        await speak(["Open", "Open Safari", "Open Safari go", "Open Safari go to YouTube", "Open Safari go to YouTube and",
+                     "Open Safari go to YouTube and search", "Open Safari go to YouTube and search Justin",
+                     "Open Safari go to YouTube and search Justin Bieber on", "Open Safari go to YouTube and search Justin Bieber on YouTube"],
+                    final: "")
+        XCTAssertEqual(ran, ["Open Safari", "Open www.youtube.com", "YouTube “justin bieber”"])
+    }
+
+    func testTrailingSearchRunsWithAFullFinal() async {
+        await speak(["Open Safari go to YouTube and search Justin Bieber on YouTube"],
+                    final: "Open Safari, go to YouTube and search Justin Bieber on YouTube.")
+        XCTAssertEqual(ran, ["Open Safari", "Open www.youtube.com", "YouTube “justin bieber”"])
+    }
+
     func testTypedTextRunsEverything() async {
         pipeline.handle("open chrome and then new tab and search for cats")
         try? await Task.sleep(nanoseconds: 900_000_000)

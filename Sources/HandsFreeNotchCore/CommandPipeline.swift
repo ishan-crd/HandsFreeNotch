@@ -176,7 +176,8 @@ public final class CommandPipeline {
         onLog?("heard\(isFinal ? " (final)" : ""): \(text)")
         let incoming = words(of: text)
         // The recognizer may rewrite earlier words; never let that un-consume what already ran.
-        if incoming.count >= consumedWords || isFinal { sessionWords = incoming }
+        // An empty final (the session closed without a result) leaves the last partial in place.
+        if incoming.count >= consumedWords, !(isFinal && incoming.isEmpty) { sessionWords = incoming }
         if isFinal {
             graceCheck?.cancel()
             stableCheck?.cancel()
@@ -278,14 +279,18 @@ public final class CommandPipeline {
             for i in 1..<limit {
                 let head = rest[0..<i].joined(separator: " ")
                 guard let routed = fast.route(head), routed.intent.firesEarly, routed.confidence >= 0.9 else { continue }
-                if fast.route(rest[i..<limit].joined(separator: " ")) != nil { return Cut(length: i, separator: 0) }
+                // A one-word tail ("go", "up") may be the start of a longer command unless a separator follows it.
+                let tail = rest[i..<limit]
+                guard tail.count >= 2 || limit < rest.count || final else { continue }
+                if fast.route(tail.joined(separator: " ")) != nil { return Cut(length: i, separator: 0) }
             }
         }
         // No separator settled it. The whole remainder runs when it is a complete, certain command.
         let whole = rest.joined(separator: " ")
         if let routed = fast.route(whole) {
             if final { return Cut(length: rest.count, separator: 0) }
-            if routed.intent.firesEarly, routed.confidence >= 0.95 { return Cut(length: rest.count, separator: 0) }
+            // One word is too little to fire on mid-sentence: "go" becomes "go to youtube".
+            if routed.intent.firesEarly, routed.confidence >= 0.95, rest.count >= 2 { return Cut(length: rest.count, separator: 0) }
         }
         return nil
     }

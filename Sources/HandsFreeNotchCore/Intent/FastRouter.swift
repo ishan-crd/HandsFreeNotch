@@ -55,7 +55,7 @@ public final class FastRouter {
     private static let exact: [String: Intent] = {
         var m: [String: Intent] = [:]
         func add(_ intent: Intent, _ phrases: String...) { for p in phrases { m[p] = intent } }
-        add(.cancel, "cancel", "never mind", "nevermind", "stop", "forget it", "no", "nothing")
+        add(.cancel, "cancel", "never mind", "nevermind", "stop", "stop listening", "forget it", "nothing")
         add(.help, "help", "what can you do", "what can i say", "commands", "show commands")
         add(.shortcut(.copy), "copy", "copy that", "copy this", "copy it")
         add(.shortcut(.paste), "paste", "paste it", "paste that", "paste here")
@@ -95,7 +95,7 @@ public final class FastRouter {
         add(.scroll(.bottom), "bottom", "go to bottom", "go to the bottom", "scroll to bottom", "scroll to the bottom", "jump to bottom")
         add(.scroll(.pageDown), "page down", "next screen")
         add(.scroll(.pageUp), "page up", "previous screen")
-        add(.pressKey(KeyChord(.return)), "enter", "return", "press enter", "hit enter", "press return", "hit return", "submit", "go", "confirm", "ok")
+        add(.pressKey(KeyChord(.return)), "enter", "return", "press enter", "hit enter", "press return", "hit return", "submit", "confirm")
         add(.pressKey(KeyChord(.escape)), "escape", "press escape", "hit escape", "dismiss", "close popup", "close the popup", "close dialog")
         add(.pressKey(KeyChord(.tab)), "tab", "press tab", "next field")
         add(.pressKey(KeyChord(.tab, shift: true)), "previous field", "shift tab")
