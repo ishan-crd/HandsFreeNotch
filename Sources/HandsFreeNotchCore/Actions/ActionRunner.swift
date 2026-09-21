@@ -121,11 +121,30 @@ public enum ActionRunner {
     }
 
     static func open(_ url: URL) {
+        // Staying on the same site ("search youtube", then "on youtube search …") navigates the
+        // front tab instead of piling up tabs. A different site still gets its own tab.
+        if let front = SystemControl.frontmostBrowser(),
+           let current = SystemControl.currentTabURL(of: front),
+           sameSite(current, url),
+           SystemControl.navigateCurrentTab(of: front, to: url) {
+            return
+        }
         if let browser {
             NSWorkspace.shared.open([url], withApplicationAt: browser.url, configuration: NSWorkspace.OpenConfiguration())
         } else {
             NSWorkspace.shared.open(url)
         }
+    }
+
+    /// "www.youtube.com" and "youtube.com" are the same site; "m.youtube.com" too.
+    static func sameSite(_ a: URL, _ b: URL) -> Bool {
+        func site(_ url: URL) -> String? {
+            guard let host = url.host?.lowercased() else { return nil }
+            let parts = host.split(separator: ".")
+            return parts.count >= 2 ? parts.suffix(2).joined(separator: ".") : host
+        }
+        guard let x = site(a), let y = site(b) else { return false }
+        return x == y
     }
 
     private static func run(system command: SystemCommand) throws {

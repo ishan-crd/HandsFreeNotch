@@ -8,7 +8,7 @@
 import Cocoa
 import SwiftUI
 
-private let stripHeight: CGFloat = 340
+private let stripHeight: CGFloat = 380
 
 @MainActor
 final class NotchWindowController: NSWindowController {

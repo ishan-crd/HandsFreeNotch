@@ -269,6 +269,16 @@ public final class CommandPipeline {
                 return Cut(length: candidate.length, separator: candidate.separator)
             }
         }
+        // "open safari search youtube": two commands with nothing between them. Cut where a certain
+        // app/site/key command ends and another command begins.
+        let limit = firstSeparator(in: rest) ?? rest.count
+        if limit > 1 {
+            for i in 1..<limit {
+                let head = rest[0..<i].joined(separator: " ")
+                guard let routed = fast.route(head), routed.intent.firesEarly, routed.confidence >= 0.9 else { continue }
+                if fast.route(rest[i..<limit].joined(separator: " ")) != nil { return Cut(length: i, separator: 0) }
+            }
+        }
         // No separator settled it. The whole remainder runs when it is a complete, certain command.
         let whole = rest.joined(separator: " ")
         if let routed = fast.route(whole) {

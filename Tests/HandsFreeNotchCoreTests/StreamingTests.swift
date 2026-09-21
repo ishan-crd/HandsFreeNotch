@@ -60,6 +60,16 @@ final class StreamingTests: XCTestCase {
         XCTAssertEqual(ran, ["Open Slack", "Open Safari"], "a second command with no separator still runs")
     }
 
+    func testCommandsWithNothingBetweenThem() async {
+        pipeline.handle("Open safari, search youtube and then on youtube search faze rug")
+        try? await Task.sleep(nanoseconds: 1_200_000_000)
+        XCTAssertEqual(ran, ["Open Safari", "Open www.youtube.com", "YouTube “faze rug”"])
+        ran = []
+        pipeline.handle("open google chrome")
+        try? await Task.sleep(nanoseconds: 300_000_000)
+        XCTAssertEqual(ran, ["Open Google Chrome"], "a multi-word app name is not cut in half")
+    }
+
     func testTypedTextRunsEverything() async {
         pipeline.handle("open chrome and then new tab and search for cats")
         try? await Task.sleep(nanoseconds: 900_000_000)

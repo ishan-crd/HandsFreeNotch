@@ -14,7 +14,8 @@ public enum SystemControl {
     static func appleScript(_ source: String) -> String? {
         var error: NSDictionary?
         let result = NSAppleScript(source: source)?.executeAndReturnError(&error)
-        return error == nil ? result?.stringValue : nil
+        guard error == nil, let result else { return nil }
+        return result.stringValue ?? ""
     }
 
     public static func outputVolume() -> Int? {
@@ -35,6 +36,42 @@ public enum SystemControl {
 
     public static func emptyTrash() {
         appleScript("tell application \"Finder\" to empty trash")
+    }
+
+    // MARK: - Browsers
+
+    /// A browser we can drive through Apple events. Firefox has no such interface.
+    public struct Browser {
+        public let name: String
+        let tabNoun: String  // Safari says "current tab", the Chromium family says "active tab"
+    }
+
+    private static let browsers: [String: Browser] = [
+        "com.apple.Safari": Browser(name: "Safari", tabNoun: "current tab"),
+        "com.google.Chrome": Browser(name: "Google Chrome", tabNoun: "active tab"),
+        "com.google.Chrome.canary": Browser(name: "Google Chrome Canary", tabNoun: "active tab"),
+        "com.brave.Browser": Browser(name: "Brave Browser", tabNoun: "active tab"),
+        "com.microsoft.edgemac": Browser(name: "Microsoft Edge", tabNoun: "active tab"),
+        "company.thebrowser.Browser": Browser(name: "Arc", tabNoun: "active tab"),
+        "com.vivaldi.Vivaldi": Browser(name: "Vivaldi", tabNoun: "active tab"),
+        "com.operasoftware.Opera": Browser(name: "Opera", tabNoun: "active tab"),
+    ]
+
+    /// The browser in front right now, if it is one we can script.
+    public static func frontmostBrowser() -> Browser? {
+        guard let id = NSWorkspace.shared.frontmostApplication?.bundleIdentifier else { return nil }
+        return browsers[id]
+    }
+
+    public static func currentTabURL(of browser: Browser) -> URL? {
+        appleScript("tell application \"\(browser.name)\" to get URL of \(browser.tabNoun) of front window").flatMap(URL.init(string:))
+    }
+
+    /// Navigates the front tab in place. False when the browser refused or has no window.
+    @discardableResult
+    public static func navigateCurrentTab(of browser: Browser, to url: URL) -> Bool {
+        let escaped = url.absoluteString.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"")
+        return appleScript("tell application \"\(browser.name)\" to set URL of \(browser.tabNoun) of front window to \"\(escaped)\"") != nil
     }
 
     /// The URL on the clipboard, or the first http(s) URL inside clipboard text.

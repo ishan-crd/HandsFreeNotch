@@ -33,7 +33,25 @@ final class NotchViewModel {
     var onOpenChanged: ((Bool) -> Void)?
 
     let animation: Animation = .spring(duration: 0.38, bounce: 0.18)
-    static let openedSize = CGSize(width: 540, height: 320)
+    static let openedSize = CGSize(width: 560, height: 320)
+
+    /// The physical notch hides pixels behind it, so pill content is laid out beside it and
+    /// taller cards start below it.
+    var hardwareNotch: CGSize {
+        deviceNotchRect.size == .zero ? CGSize(width: 180, height: 32) : deviceNotchRect.size
+    }
+
+    /// Width of the readable strip on each side of the physical notch for the current state.
+    var sideWidth: CGFloat {
+        switch pipelineState {
+        case .idle: return 0
+        case .listening: return 230
+        case .thinking: return 200
+        case .done: return 230
+        case .failed: return 300
+        case .agent, .help: return 0
+        }
+    }
 
     init(pipeline: CommandPipeline) {
         self.pipeline = pipeline
@@ -53,17 +71,15 @@ final class NotchViewModel {
 
     /// The size of the black shape for the current state.
     var notchSize: CGSize {
-        if status == .opened { return Self.openedSize }
-        let base = deviceNotchRect.size == .zero ? CGSize(width: 180, height: 32) : deviceNotchRect.size
+        let base = hardwareNotch
+        if status == .opened { return CGSize(width: Self.openedSize.width, height: Self.openedSize.height + base.height) }
         let h = max(base.height, 30)
         switch pipelineState {
         case .idle: return CGSize(width: base.width, height: base.height)
-        case .listening: return CGSize(width: max(base.width + 210, 400), height: h)
-        case .thinking: return CGSize(width: max(base.width + 160, 340), height: h)
-        case .done: return CGSize(width: max(base.width + 200, 400), height: h)
-        case .failed: return CGSize(width: max(base.width + 280, 480), height: h)
-        case .agent: return CGSize(width: 520, height: 140)
-        case .help: return CGSize(width: 520, height: 170)
+        case .listening, .thinking, .done: return CGSize(width: base.width + sideWidth * 2, height: h)
+        case .failed: return CGSize(width: base.width + sideWidth * 2, height: h + 8)
+        case .agent: return CGSize(width: 520, height: 140 + base.height)
+        case .help: return CGSize(width: 560, height: 170 + base.height)
         }
     }
 

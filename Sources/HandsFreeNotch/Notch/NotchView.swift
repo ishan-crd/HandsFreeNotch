@@ -69,6 +69,7 @@ struct NotchView: View {
     private var content: some View {
         if vm.status == .opened {
             PanelView(vm: vm)
+                .padding(.top, vm.hardwareNotch.height)
                 .transition(.opacity.combined(with: .scale(scale: 0.96, anchor: .top)))
         } else {
             switch vm.pipelineState {
@@ -93,28 +94,45 @@ struct NotchView: View {
                 pill(icon: "exclamationmark.triangle.fill", tint: .orange, text: message, dim: false) { EmptyView() }
             case let .agent(goal, lines):
                 agentCard(goal: goal, lines: lines)
+                    .padding(.top, vm.hardwareNotch.height)
             case .help:
                 HelpView(compact: true)
                     .padding(12)
+                    .padding(.top, vm.hardwareNotch.height)
             }
         }
     }
 
+    /// Icon and text on the left of the physical notch, the trailing view on its right; the
+    /// middle is the camera housing and stays empty.
     private func pill<Trailing: View>(icon: String, tint: Color, text: String, dim: Bool, @ViewBuilder trailing: () -> Trailing) -> some View {
-        HStack(spacing: 8) {
-            Image(systemName: icon)
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(tint)
-                .frame(width: 14)
-            Text(text)
-                .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(.white.opacity(dim ? 0.5 : 0.92))
-                .lineLimit(1)
-                .truncationMode(.head)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            trailing()
+        let isFailure = icon.hasPrefix("exclamationmark")
+        return HStack(spacing: 0) {
+            HStack(spacing: 8) {
+                Image(systemName: icon)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(tint)
+                    .frame(width: 14)
+                Text(text)
+                    .font(.system(size: isFailure ? 10.5 : 12, weight: .medium))
+                    .foregroundStyle(.white.opacity(dim ? 0.5 : 0.92))
+                    .lineLimit(isFailure ? 2 : 1)
+                    .truncationMode(isFailure ? .tail : .head)
+                    .multilineTextAlignment(.leading)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .padding(.leading, 14)
+            .padding(.trailing, 8)
+            .frame(width: vm.sideWidth)
+            Color.clear.frame(width: vm.hardwareNotch.width)
+            HStack {
+                trailing()
+                Spacer(minLength: 0)
+            }
+            .padding(.leading, 8)
+            .padding(.trailing, 14)
+            .frame(width: vm.sideWidth)
         }
-        .padding(.horizontal, 14)
         .transition(.opacity)
         .id(text)
     }

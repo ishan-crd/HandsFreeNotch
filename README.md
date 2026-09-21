@@ -99,6 +99,7 @@ Things the fast tier understands, with room for variation in wording:
 | open spotify · launch chrome · switch to slack · open the settings | opens or activates the app; nicknames like “chrome”, “vs code”, “settings” work |
 | open youtube · go to github.com · open github dot com slash ishan-crd · open slack in the browser | opens the site in your default browser |
 | open this link · open copied link | opens the URL on the clipboard |
+| (while on youtube.com) on youtube search faze rug | same site → navigates the front tab instead of opening another (Safari, Chrome, Arc, Brave, Edge) |
 | search for best ramen near me · youtube lofi beats · look up everest on wikipedia · what is the capital of peru | web search (Google, YouTube, Wikipedia, GitHub, Amazon, Maps) |
 | type hello team · press enter · press command shift t · select all · delete word | typing and keys into the focused app |
 | new tab · close tab · reopen tab · next tab · go back · reload · zoom in · address bar · find | browser and window shortcuts |
