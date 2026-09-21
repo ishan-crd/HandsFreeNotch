@@ -307,7 +307,7 @@ public final class CommandPipeline {
             return
         }
         guard let llm else {
-            fail("Didn't catch a command in “\(text)”. Add an API key in Settings to handle free-form requests.")
+            fail("Not a command: “\(text)” · add an API key in Settings for free-form requests")
             return
         }
         state = .thinking(transcript: text)

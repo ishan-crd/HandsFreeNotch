@@ -41,15 +41,40 @@ final class NotchViewModel {
         deviceNotchRect.size == .zero ? CGSize(width: 180, height: 32) : deviceNotchRect.size
     }
 
-    /// Width of the readable strip on each side of the physical notch for the current state.
-    var sideWidth: CGFloat {
+    /// The one line of text the pill shows, and its font.
+    var pillText: (text: String, font: NSFont) {
         switch pipelineState {
-        case .idle: return 0
-        case .listening: return 230
-        case .thinking: return 200
-        case .done: return 230
-        case .failed: return 300
-        case .agent, .help: return 0
+        case .idle, .agent, .help: return ("", .systemFont(ofSize: 12))
+        case let .listening(t): return (t.isEmpty ? (pipeline.continuous ? "Listening · tap to stop" : "Listening…") : t, .systemFont(ofSize: 12, weight: .medium))
+        case let .thinking(t): return (t, .systemFont(ofSize: 12, weight: .medium))
+        case let .done(title, _, _): return (title, .systemFont(ofSize: 12, weight: .medium))
+        case let .failed(m): return (m, .systemFont(ofSize: 11, weight: .medium))
+        }
+    }
+
+    /// Width of the strip left of the physical notch: icon + one line of text, sized to fit.
+    var leftWidth: CGFloat {
+        let (text, font) = pillText
+        guard !text.isEmpty else { return 0 }
+        let measured = (text as NSString).size(withAttributes: [.font: font]).width
+        let chrome: CGFloat = 12 + 14 + 6 + 10  // padding, icon, gap, padding
+        let cap: CGFloat
+        switch pipelineState {
+        case .failed: cap = 420
+        case .thinking: cap = 260
+        default: cap = 300
+        }
+        return min(ceil(measured) + chrome, cap)
+    }
+
+    /// Width of the strip right of the physical notch: just the indicator.
+    var rightWidth: CGFloat {
+        switch pipelineState {
+        case .idle, .agent, .help: return 0
+        case .listening: return 40
+        case .thinking: return 36
+        case .done: return 60
+        case .failed: return 10
         }
     }
 
@@ -76,8 +101,7 @@ final class NotchViewModel {
         let h = max(base.height, 30)
         switch pipelineState {
         case .idle: return CGSize(width: base.width, height: base.height)
-        case .listening, .thinking, .done: return CGSize(width: base.width + sideWidth * 2, height: h)
-        case .failed: return CGSize(width: base.width + sideWidth * 2, height: h + 8)
+        case .listening, .thinking, .done, .failed: return CGSize(width: base.width + leftWidth + rightWidth, height: h)
         case .agent: return CGSize(width: 520, height: 140 + base.height)
         case .help: return CGSize(width: 560, height: 170 + base.height)
         }
@@ -86,7 +110,7 @@ final class NotchViewModel {
     var cornerRadius: CGFloat {
         if status == .opened { return 30 }
         if case .idle = pipelineState { return 8 }
-        return 14
+        return 10
     }
 
     var openedRect: CGRect {

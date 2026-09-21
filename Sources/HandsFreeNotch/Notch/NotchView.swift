@@ -19,7 +19,8 @@ struct NotchView: View {
                 .clipped()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .animation(vm.animation, value: vm.notchSize)
+        // Width follows the words as they arrive, so the resize must be quick and never bounce.
+        .animation(vm.status == .opened ? vm.animation : .snappy(duration: 0.22, extraBounce: 0), value: vm.notchSize)
         .animation(vm.animation, value: vm.status == .opened)
         .preferredColorScheme(.dark)
     }
@@ -30,7 +31,7 @@ struct NotchView: View {
         Color.black
             .mask(mask)
             .frame(width: vm.notchSize.width + vm.cornerRadius * 2, height: vm.notchSize.height)
-            .shadow(color: .black.opacity(vm.status == .opened || vm.pipelineState != .idle ? 0.6 : 0), radius: 14, y: 4)
+            .shadow(color: .black.opacity(vm.status == .opened ? 0.6 : (vm.pipelineState != .idle ? 0.3 : 0)), radius: vm.status == .opened ? 14 : 8, y: 3)
     }
 
     private var mask: some View {
@@ -76,22 +77,21 @@ struct NotchView: View {
             case .idle:
                 EmptyView()
             case let .listening(transcript):
-                let hint = vm.pipeline.continuous ? "Listening — tap \(vm.settings.hotkey.title) or say stop" : "Listening…"
-                pill(icon: "mic.fill", tint: .red, text: transcript.isEmpty ? hint : transcript, dim: transcript.isEmpty) {
+                pill(icon: "mic.fill", tint: .red, dim: transcript.isEmpty, head: true) {
                     LevelBars(level: vm.level)
                 }
-            case let .thinking(transcript):
-                pill(icon: "sparkles", tint: .purple, text: transcript, dim: false) {
+            case .thinking:
+                pill(icon: "sparkles", tint: .purple, dim: false, head: false) {
                     ProgressView().controlSize(.mini).tint(.white)
                 }
-            case let .done(title, tier, ms):
-                pill(icon: "checkmark.circle.fill", tint: .green, text: title, dim: false) {
-                    Text("\(ms) ms · \(tier.rawValue)")
+            case let .done(_, tier, ms):
+                pill(icon: "checkmark.circle.fill", tint: .green, dim: false, head: false) {
+                    Text("\(ms) ms")
                         .font(.system(size: 10, weight: .medium, design: .rounded).monospacedDigit())
-                        .foregroundStyle(.white.opacity(0.45))
+                        .foregroundStyle(tier == .fast ? .green.opacity(0.8) : .white.opacity(0.45))
                 }
-            case let .failed(message):
-                pill(icon: "exclamationmark.triangle.fill", tint: .orange, text: message, dim: false) { EmptyView() }
+            case .failed:
+                pill(icon: "exclamationmark.triangle.fill", tint: .orange, dim: false, head: false) { EmptyView() }
             case let .agent(goal, lines):
                 agentCard(goal: goal, lines: lines)
                     .padding(.top, vm.hardwareNotch.height)
@@ -103,38 +103,35 @@ struct NotchView: View {
         }
     }
 
-    /// Icon and text on the left of the physical notch, the trailing view on its right; the
-    /// middle is the camera housing and stays empty.
-    private func pill<Trailing: View>(icon: String, tint: Color, text: String, dim: Bool, @ViewBuilder trailing: () -> Trailing) -> some View {
-        let isFailure = icon.hasPrefix("exclamationmark")
+    /// Icon and one line of text left of the camera housing, sized to the words; the indicator
+    /// alone on the right. The housing itself stays empty.
+    private func pill<Trailing: View>(icon: String, tint: Color, dim: Bool, head: Bool, @ViewBuilder trailing: () -> Trailing) -> some View {
+        let (text, font) = vm.pillText
         return HStack(spacing: 0) {
-            HStack(spacing: 8) {
+            HStack(spacing: 6) {
                 Image(systemName: icon)
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(tint)
                     .frame(width: 14)
                 Text(text)
-                    .font(.system(size: isFailure ? 10.5 : 12, weight: .medium))
+                    .font(Font(font))
                     .foregroundStyle(.white.opacity(dim ? 0.5 : 0.92))
-                    .lineLimit(isFailure ? 2 : 1)
-                    .truncationMode(isFailure ? .tail : .head)
-                    .multilineTextAlignment(.leading)
+                    .lineLimit(1)
+                    .truncationMode(head ? .head : .tail)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .padding(.leading, 14)
-            .padding(.trailing, 8)
-            .frame(width: vm.sideWidth)
+            .padding(.leading, 12)
+            .padding(.trailing, 10)
+            .frame(width: vm.leftWidth)
             Color.clear.frame(width: vm.hardwareNotch.width)
-            HStack {
-                trailing()
+            HStack(spacing: 0) {
                 Spacer(minLength: 0)
+                trailing()
             }
-            .padding(.leading, 8)
-            .padding(.trailing, 14)
-            .frame(width: vm.sideWidth)
+            .padding(.trailing, 12)
+            .frame(width: vm.rightWidth)
         }
         .transition(.opacity)
-        .id(text)
     }
 
     private func agentCard(goal: String, lines: [String]) -> some View {
