@@ -1,0 +1,142 @@
+<h1 align="center">HandsFreeNotch</h1>
+
+<p align="center">
+  Hold a key, say “open Spotify”, let go. The notch shows what it heard and what it did, in milliseconds.
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/platform-macOS%2014%2B-blue" alt="Platform">
+  <img src="https://img.shields.io/badge/swift-5.10-orange" alt="Swift">
+  <img src="https://img.shields.io/badge/speech-on--device-green" alt="On-device speech">
+  <img src="https://img.shields.io/github/license/ishan-crd/HandsFreeNotch" alt="License">
+</p>
+
+---
+
+HandsFreeNotch is a voice command bar that lives in the MacBook notch. It is built to be fast
+and light: speech recognition runs on the Mac, the everyday commands are matched with no model at
+all, and a small model is only asked when a sentence is genuinely unusual.
+
+```
+hold ⌥ (right)   →   "open chrome"          →   Chrome is frontmost before you let go
+                     "youtube lofi beats"   →   a YouTube search in your browser
+                     "type on my way, five minutes" → typed into whatever has focus
+                     "set volume to 30"     →   done
+                     "find the cheapest flight to tokyo next friday"  →  handed to the screen agent
+```
+
+## How it stays fast
+
+Every command goes through three tiers, and stops at the first one that can answer.
+
+| tier | what | latency | cost |
+|---|---|---|---|
+| **0 · fast** | pattern matching over the transcript against the installed apps and a site list | < 1 ms | free |
+| **1 · model** | Claude Haiku 4.5 (or a local Ollama model) returns one JSON action; no screenshot, no page text | ~300–600 ms | ≈ $0.0003 |
+| **2 · agent** | [typesafe-computer-use](https://github.com/awlevin/typesafe-computer-use) reads the screen and clicks through it | seconds per step | ≈ $0.0002 / step |
+
+Tier 0 runs on every partial transcript while you are still holding the key. When the words stop
+changing for 300 ms and match with high confidence, the action fires immediately; for “open
+Spotify” that is usually before you release. Anything that consumes the rest of your sentence
+(search, type) waits for the final transcript.
+
+Speech recognition is Apple's `SFSpeechRecognizer` with on-device recognition. The audio engine is
+prepared at launch, so a key press starts capture in a few milliseconds and nothing leaves the Mac.
+
+Idle cost is nothing: no timers, no hover tracking, no polling. The app sits at 0% CPU and about
+25 MB until you hold the key.
+
+## Install
+
+macOS 14 or newer, Xcode 16 command line tools.
+
+```bash
+git clone https://github.com/ishan-crd/HandsFreeNotch.git
+cd HandsFreeNotch
+make install        # builds build/HandsFreeNotch.app, copies it to /Applications, launches it
+```
+
+Or `make run` to launch from the build folder, or `open Package.swift` to work in Xcode.
+
+On first launch macOS asks for **Microphone** and **Speech Recognition**. Also allow the app under
+**System Settings › Privacy & Security › Accessibility**: that is what lets it hear the push-to-talk
+key system-wide and send keystrokes, scrolls and shortcuts to other apps. The notch opens on its
+own to the Settings tab if anything is missing.
+
+> The default build is ad-hoc signed. macOS ties the Accessibility grant to the code signature, so
+> after rebuilding you have to toggle the app off and on again in the Accessibility list. Pass
+> `CODESIGN_IDENTITY="Apple Development: …"` to `scripts/bundle.sh` to keep the grant across builds.
+
+## Use
+
+Hold **right ⌥ Option** (changeable to right ⌘, right ⌃, left ⌃ or fn in Settings), speak, release.
+Click the notch to open the panel: recent commands with their timings, the command list, and
+settings. The panel also has a text field to try commands by typing.
+
+Things the fast tier understands, with room for variation in wording:
+
+| say | does |
+|---|---|
+| open spotify · launch chrome · switch to slack · open the settings | opens or activates the app; nicknames like “chrome”, “vs code”, “settings” work |
+| open youtube · go to github.com · open github dot com slash ishan-crd · open slack in the browser | opens the site in your default browser |
+| open this link · open copied link | opens the URL on the clipboard |
+| search for best ramen near me · youtube lofi beats · look up everest on wikipedia · what is the capital of peru | web search (Google, YouTube, Wikipedia, GitHub, Amazon, Maps) |
+| type hello team · press enter · press command shift t · select all · delete word | typing and keys into the focused app |
+| new tab · close tab · reopen tab · next tab · go back · reload · zoom in · address bar · find | browser and window shortcuts |
+| volume up · mute · set volume to 30 · max volume · brightness down | system controls |
+| play · pause · next song · previous | media keys |
+| scroll down · scroll up a lot · page down · top · bottom | scrolling under the cursor |
+| quit spotify · hide chrome · minimize · close window · lock screen · sleep · screenshot · show desktop · mission control · spotlight · empty trash | apps and the Mac |
+| open spotify then play · open chrome and then new tab | sequences, when every step is a fast-tier command |
+| cancel · never mind | does nothing |
+
+Anything else goes to the model, which either picks one of the same actions or, when the request
+needs clicking around inside an app (“reply to the last message”, “find the cheapest flight”),
+hands it to the agent with the full goal.
+
+## Settings
+
+| setting | default | notes |
+|---|---|---|
+| Push to talk | right ⌥ | a modifier key, so holding it never types anything |
+| Free-form model | Claude Haiku 4.5 | or **Ollama** (`qwen2.5:1.5b` by default, free and offline), or **Off** to run tier 0 only |
+| Anthropic API key | — | stored in the login keychain; `ANTHROPIC_API_KEY` in the environment or in `~/.config/handsfreenotch/.env` also works |
+| Screen agent path | auto-detected | a checkout of typesafe-computer-use with `uv sync` done and its own `.env` |
+| Launch at login | off | |
+
+## Architecture
+
+```
+Sources/HandsFreeNotchCore          no UI; tested with `swift test`
+  Speech/SpeechListener.swift       AVAudioEngine → SFSpeechRecognizer, partials + mic level
+  Speech/HotkeyMonitor.swift        the push-to-talk modifier key
+  Intent/Intent.swift               the action vocabulary
+  Intent/Normalizer.swift           transcript → plain words; sequence splitting; number words
+  Intent/Fuzzy.swift                "spot if i" ≈ "Spotify"
+  Intent/AppIndex.swift             installed + running apps, nicknames
+  Intent/SiteIndex.swift            site names → URLs, domain heuristics
+  Intent/FastRouter.swift           tier 0
+  Intent/LLMRouter.swift            tier 1: Anthropic and Ollama, one strict JSON schema
+  Intent/AgentFallback.swift        tier 2: runs `clicker` and streams its output
+  Actions/ActionRunner.swift        carries out an Intent
+  Actions/Keys.swift                CGEvent keys, typing, scrolling, media keys
+  Actions/SystemControl.swift       volume, sleep, trash, clipboard URL
+  CommandPipeline.swift             hold → listen → route → act, with early firing and timings
+
+Sources/HandsFreeNotch              the app
+  Notch/                            notch window and shape (from NotchOS), panel, level bars
+  App/                              delegate, settings, keychain
+```
+
+The notch window is a non-activating panel, so the app you are working in keeps keyboard focus
+and synthesised keystrokes land there.
+
+## Acknowledgements
+
+The notch window, shape and event handling come from [NotchOS](https://github.com/ishan-crd/NotchOS),
+itself built on [NotchDrop](https://github.com/Lakr233/NotchDrop). The three-tier idea and the
+agent tier come from [typesafe-computer-use](https://github.com/awlevin/typesafe-computer-use).
+
+## License
+
+[MIT](./LICENSE)

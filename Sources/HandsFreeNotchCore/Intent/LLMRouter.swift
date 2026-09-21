@@ -1,0 +1,236 @@
+//
+//  LLMRouter.swift
+//  HandsFreeNotch
+//
+//  Copyright © 2026 Ishan Gupta. MIT License.
+//
+
+import Foundation
+
+/// Tier 1: a small model turns an unusual sentence into the same `Intent` the fast router
+/// produces. No screenshot, no page text: just the words and the list of installed apps, so a
+/// call is a few hundred tokens and a few hundred milliseconds.
+public protocol LLMRouter {
+    var label: String { get }
+    func route(_ transcript: String, apps: AppIndex) async throws -> Routed?
+}
+
+public enum LLMRouterError: LocalizedError {
+    case missingKey
+    case http(Int, String)
+    case badResponse(String)
+
+    public var errorDescription: String? {
+        switch self {
+        case .missingKey: return "No API key set. Open the notch and add one in Settings."
+        case let .http(code, body): return "LLM request failed (\(code)): \(body.prefix(200))"
+        case let .badResponse(why): return "LLM gave an unusable answer: \(why)"
+        }
+    }
+}
+
+/// The one JSON shape both providers fill in. Kept flat so a 1.5B local model can manage it.
+struct RoutePayload: Decodable {
+    var action: String
+    var app: String?
+    var url: String?
+    var query: String?
+    var engine: String?
+    var text: String?
+    var key: String?
+    var modifiers: [String]?
+    var amount: Int?
+    var goal: String?
+
+    static let actions = [
+        "open_app", "open_url", "search", "type_text", "press_key", "shortcut", "quit_app", "hide_app",
+        "scroll_down", "scroll_up", "volume_up", "volume_down", "volume_set", "mute", "unmute",
+        "brightness_up", "brightness_down", "play_pause", "next_track", "previous_track",
+        "lock_screen", "sleep", "screenshot", "show_desktop", "mission_control", "spotlight",
+        "empty_trash", "agent", "cancel",
+    ]
+
+    static let schema: [String: Any] = [
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["action"],
+        "properties": [
+            "action": ["type": "string", "enum": actions],
+            "app": ["type": "string", "description": "Exact name from the installed apps list, for open_app/quit_app/hide_app"],
+            "url": ["type": "string", "description": "Full https URL for open_url"],
+            "query": ["type": "string", "description": "Search terms for search"],
+            "engine": ["type": "string", "enum": SearchEngine.allCases.map(\.rawValue)],
+            "text": ["type": "string", "description": "Text to type for type_text"],
+            "key": ["type": "string", "description": "Key name for press_key: enter, escape, tab, space, delete, up, down, left, right, or a single letter/digit"],
+            "modifiers": ["type": "array", "items": ["type": "string", "enum": ["command", "shift", "option", "control"]]],
+            "amount": ["type": "integer", "description": "Percent for volume_set, lines for scroll, steps for volume up/down"],
+            "goal": ["type": "string", "description": "For agent: the full goal in the user's words"],
+        ],
+    ]
+
+    static func systemPrompt(apps: [String]) -> String {
+        """
+        You route one spoken command from a macOS user to one action. Reply only by calling the route tool.
+        Rules:
+        - Use open_app only with an exact name from INSTALLED APPS. If the user names an app that is not installed but is a website (netflix, gmail), use open_url.
+        - Prefer the simplest action that satisfies the sentence. "play some jazz" is open_app Spotify only if nothing better exists; if the request needs clicking around inside an app or a website (find a product, book something, reply to a message, read something on screen), use agent with the full goal.
+        - shortcut takes key+modifiers, e.g. new tab is key "t" with ["command"].
+        - Unclear or not a command: cancel.
+        INSTALLED APPS: \(apps.joined(separator: ", "))
+        """
+    }
+
+    func intent(apps: AppIndex) throws -> Intent {
+        func app() throws -> AppEntry {
+            guard let name = self.app, let match = apps.match(name), match.1 >= 0.7 else {
+                throw LLMRouterError.badResponse("unknown app \(self.app ?? "nil")")
+            }
+            return match.0
+        }
+        func chord() throws -> KeyChord {
+            guard let key = self.key?.lowercased(), let k = FastRouter.keyNames[key] else {
+                throw LLMRouterError.badResponse("unknown key \(self.key ?? "nil")")
+            }
+            let mods = Set(modifiers ?? [])
+            return KeyChord(k, command: mods.contains("command"), shift: mods.contains("shift"), option: mods.contains("option"), control: mods.contains("control"))
+        }
+        switch action {
+        case "open_app": return .openApp(try app())
+        case "open_url":
+            guard let s = url, let u = URL(string: s), u.scheme != nil else { throw LLMRouterError.badResponse("bad url") }
+            return .openURL(u)
+        case "search":
+            guard let q = query, !q.isEmpty else { throw LLMRouterError.badResponse("empty query") }
+            return .search(query: q, engine: SearchEngine(rawValue: engine ?? "google") ?? .google)
+        case "type_text":
+            guard let t = text, !t.isEmpty else { throw LLMRouterError.badResponse("empty text") }
+            return .typeText(t)
+        case "press_key", "shortcut": return .pressKey(try chord())
+        case "quit_app": return .quitApp(try app())
+        case "hide_app": return .hideApp(try app())
+        case "scroll_down": return .scroll(.down(lines: amount ?? 10))
+        case "scroll_up": return .scroll(.up(lines: amount ?? 10))
+        case "volume_up": return .volume(.up(steps: amount ?? 3))
+        case "volume_down": return .volume(.down(steps: amount ?? 3))
+        case "volume_set": return .volume(.set(percent: max(0, min(100, amount ?? 50))))
+        case "mute": return .volume(.mute)
+        case "unmute": return .volume(.unmute)
+        case "brightness_up": return .brightness(up: true)
+        case "brightness_down": return .brightness(up: false)
+        case "play_pause": return .media(.playPause)
+        case "next_track": return .media(.next)
+        case "previous_track": return .media(.previous)
+        case "lock_screen": return .system(.lockScreen)
+        case "sleep": return .system(.sleep)
+        case "screenshot": return .system(.screenshot)
+        case "show_desktop": return .system(.showDesktop)
+        case "mission_control": return .system(.missionControl)
+        case "spotlight": return .system(.spotlight)
+        case "empty_trash": return .system(.emptyTrash)
+        case "agent": return .agent(goal: goal ?? "")
+        case "cancel": return .cancel
+        default: throw LLMRouterError.badResponse("unknown action \(action)")
+        }
+    }
+}
+
+// MARK: - Anthropic
+
+/// Claude Haiku 4.5 through the Messages API with one strict tool, so the answer is always the
+/// shape above. About $0.0003 a command.
+public struct AnthropicRouter: LLMRouter {
+    public static let defaultModel = "claude-haiku-4-5"
+    public var apiKey: String
+    public var model: String
+    public var timeout: TimeInterval = 8
+
+    public init(apiKey: String, model: String = AnthropicRouter.defaultModel) {
+        self.apiKey = apiKey
+        self.model = model
+    }
+
+    public var label: String { model }
+
+    public func route(_ transcript: String, apps: AppIndex) async throws -> Routed? {
+        guard !apiKey.isEmpty else { throw LLMRouterError.missingKey }
+        let body: [String: Any] = [
+            "model": model,
+            "max_tokens": 256,
+            "system": RoutePayload.systemPrompt(apps: apps.names),
+            "tools": [[
+                "name": "route",
+                "description": "The single action to take for the spoken command.",
+                "strict": true,
+                "input_schema": RoutePayload.schema,
+            ]],
+            "tool_choice": ["type": "tool", "name": "route"],
+            "messages": [["role": "user", "content": transcript]],
+        ]
+        var request = URLRequest(url: URL(string: "https://api.anthropic.com/v1/messages")!)
+        request.httpMethod = "POST"
+        request.timeoutInterval = timeout
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue(apiKey, forHTTPHeaderField: "x-api-key")
+        request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+        guard status == 200 else { throw LLMRouterError.http(status, String(data: data, encoding: .utf8) ?? "") }
+        guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let content = json["content"] as? [[String: Any]],
+              let tool = content.first(where: { $0["type"] as? String == "tool_use" }),
+              let input = tool["input"] else {
+            throw LLMRouterError.badResponse("no tool_use block")
+        }
+        let payload = try JSONDecoder().decode(RoutePayload.self, from: JSONSerialization.data(withJSONObject: input))
+        return Routed(try payload.intent(apps: apps), confidence: 0.8, tier: .llm)
+    }
+}
+
+// MARK: - Ollama
+
+/// A local model through Ollama's chat endpoint with a JSON schema response. Free, offline, and
+/// good enough for this flat schema with a 1-3B model.
+public struct OllamaRouter: LLMRouter {
+    public static let defaultModel = "qwen2.5:1.5b"
+    public var model: String
+    public var endpoint: URL
+    public var timeout: TimeInterval = 10
+
+    public init(model: String = OllamaRouter.defaultModel, endpoint: URL = URL(string: "http://127.0.0.1:11434/api/chat")!) {
+        self.model = model
+        self.endpoint = endpoint
+    }
+
+    public var label: String { "ollama/\(model)" }
+
+    public func route(_ transcript: String, apps: AppIndex) async throws -> Routed? {
+        let body: [String: Any] = [
+            "model": model,
+            "stream": false,
+            "format": RoutePayload.schema,
+            "options": ["temperature": 0, "num_predict": 200],
+            "messages": [
+                ["role": "system", "content": RoutePayload.systemPrompt(apps: apps.names) + "\nAnswer with one JSON object only."],
+                ["role": "user", "content": transcript],
+            ],
+        ]
+        var request = URLRequest(url: endpoint)
+        request.httpMethod = "POST"
+        request.timeoutInterval = timeout
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        let (data, response) = try await URLSession.shared.data(for: request)
+        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+        guard status == 200 else { throw LLMRouterError.http(status, String(data: data, encoding: .utf8) ?? "") }
+        guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let message = json["message"] as? [String: Any],
+              let content = message["content"] as? String,
+              let payloadData = content.data(using: .utf8) else {
+            throw LLMRouterError.badResponse("no message content")
+        }
+        let payload = try JSONDecoder().decode(RoutePayload.self, from: payloadData)
+        return Routed(try payload.intent(apps: apps), confidence: 0.7, tier: .llm)
+    }
+}

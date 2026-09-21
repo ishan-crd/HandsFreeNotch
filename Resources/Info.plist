@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>en</string>
+	<key>CFBundleExecutable</key>
+	<string>HandsFreeNotch</string>
+	<key>CFBundleIdentifier</key>
+	<string>com.ishan.HandsFreeNotch</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>HandsFreeNotch</string>
+	<key>CFBundleDisplayName</key>
+	<string>HandsFreeNotch</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>0.1.0</string>
+	<key>CFBundleVersion</key>
+	<string>1</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>14.0</string>
+	<key>LSUIElement</key>
+	<true/>
+	<key>NSPrincipalClass</key>
+	<string>NSApplication</string>
+	<key>NSHighResolutionCapable</key>
+	<true/>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>HandsFreeNotch listens while you hold the push-to-talk key so it can run your spoken command.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>HandsFreeNotch turns what you say into a command, on this Mac, using Apple's on-device recognizer.</string>
+	<key>NSAppleEventsUsageDescription</key>
+	<string>HandsFreeNotch uses System Events for volume, sleep and emptying the Trash.</string>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
+</dict>
+</plist>
